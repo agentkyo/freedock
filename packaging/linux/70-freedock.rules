@@ -1,0 +1,11 @@
+# FreeDock - let the logged-in user talk to the MiraBox N4 without root.
+# Install: sudo cp 70-freedock.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+
+# MiraBox N4 (6602:1001) and the 6603:1007 rebrand - hidraw and libusb access
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="6602", ATTRS{idProduct}=="1001", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="6603", ATTRS{idProduct}=="1007", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="6602", ATTRS{idProduct}=="1001", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="6603", ATTRS{idProduct}=="1007", MODE="0660", TAG+="uaccess"
+
+# Virtual keyboard used for hotkeys (works on X11 and Wayland)
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

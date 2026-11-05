@@ -1,0 +1,41 @@
+# Maintainer: agentkyo <caioviniciusxd@gmail.com>
+# Arch Linux / CachyOS / EndeavourOS / Manjaro
+pkgname=freedock-git
+_pkgname=freedock
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Open-source driver and editor for the MiraBox N4 StreamDock (no vendor software)"
+arch=('any')
+url="https://github.com/agentkyo/freedock"
+license=('MIT')
+depends=('python' 'pyside6' 'python-hidapi' 'python-psutil' 'python-evdev' 'hidapi')
+optdepends=('wireplumber: volume and microphone control (wpctl)'
+            'playerctl: media keys fallback'
+            'kdotool: focused-window detection on KDE Wayland')
+makedepends=('git' 'python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$_pkgname"
+    printf "%s.r%s.%s" "$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)" \
+        "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+    cd "$_pkgname"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$_pkgname"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 packaging/linux/70-freedock.rules "$pkgdir/usr/lib/udev/rules.d/70-freedock.rules"
+    install -Dm644 packaging/linux/freedock.desktop "$pkgdir/usr/share/applications/freedock.desktop"
+    install -Dm644 packaging/linux/freedock.service "$pkgdir/usr/lib/systemd/user/freedock.service"
+    sed -i 's|%h/.local/share/freedock/venv/bin/python|/usr/bin/python|' "$pkgdir/usr/lib/systemd/user/freedock.service"
+    install -Dm644 /dev/stdin "$pkgdir/usr/lib/modules-load.d/freedock-uinput.conf" <<< "uinput"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

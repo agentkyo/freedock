@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=FreeDock
+GenericName=StreamDock editor
+Comment=Configure your MiraBox N4 - open source
+Comment[pt_BR]=Configure seu MiraBox N4 - código aberto
+Comment[es]=Configura tu MiraBox N4 - código abierto
+Exec=freedock
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;Settings;HardwareSettings;
+Keywords=stream deck;streamdock;mirabox;n4;macro;

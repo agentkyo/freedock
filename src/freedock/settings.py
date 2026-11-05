@@ -1,0 +1,53 @@
+"""App settings (language, autostart, integrations) - separate from the profile so profiles can be shared."""
+from __future__ import annotations
+
+import json
+import locale
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+from .profile import config_dir
+
+
+def system_language() -> str:
+    try:
+        lang = (locale.getlocale()[0] or "").lower()
+    except ValueError:
+        lang = ""
+    if lang.startswith(("pt", "portuguese")):
+        return "pt"
+    if lang.startswith(("es", "spanish")):
+        return "es"
+    return "en"
+
+
+@dataclass
+class Settings:
+    language: str = ""
+    device_serial: str | None = None
+    start_minimized: bool = False
+    weather: dict[str, Any] = field(default_factory=lambda: {"lat": None, "lon": None, "city": ""})
+    obs: dict[str, Any] = field(default_factory=lambda: {"host": "localhost", "port": 4455, "password": ""})
+    assetto_controls: str = ""         # override path to Assetto Corsa cfg/controls.ini
+    simconnect_dll: str = ""           # override path to SimConnect.dll
+
+    @classmethod
+    def load(cls) -> "Settings":
+        path = config_dir() / "settings.json"
+        s = cls()
+        if path.is_file():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                for k, v in data.items():
+                    if hasattr(s, k):
+                        setattr(s, k, v)
+            except (OSError, ValueError):
+                pass
+        if not s.language:
+            s.language = system_language()
+        return s
+
+    def save(self) -> None:
+        path = config_dir() / "settings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(asdict(self), ensure_ascii=False, indent=2), encoding="utf-8")

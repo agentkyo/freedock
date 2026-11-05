@@ -1,0 +1,15 @@
+[Unit]
+Description=FreeDock - MiraBox N4 driver (headless)
+Documentation=https://github.com/agentkyo/freedock
+After=graphical-session.target pipewire.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/freedock/venv/bin/python -m freedock run
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=graphical-session.target
