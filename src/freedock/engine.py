@@ -34,6 +34,9 @@ log = logging.getLogger(__name__)
 
 FPS = 30
 LONG_PRESS_S = 0.55
+MENU_HOLD_S = 1.2          # hold any key this long -> page menu (works on every page)
+MENU_TIMEOUT_S = 10.0
+BANNER_S = 1.3
 TRANSITION_S = 0.42
 EMPTY = Visual(bg="#0a0c11", fg="#3a4252")
 
@@ -127,6 +130,9 @@ class Engine(QObject):
         self._timers: dict[str, Timer] = {}
         self._smooth: dict[tuple[str, str], float] = {}
         self._transition: Transition | None = None
+        self._menu: dict | None = None          # {"t0", "sel", "offset"} while the page menu is open
+        self._banner_t0: float = -1.0
+        self._swallow_up: int | None = None
         self._boot_t0: float = -1.0
         self._last_input = time.monotonic()
         self._screensaver = False
@@ -250,6 +256,9 @@ class Engine(QObject):
             if ev.type in (EventType.DOWN, EventType.TAP, EventType.PUSH, EventType.SWIPE):
                 self._swallow_up = ev.index if ev.kind == Kind.KEY else None
             return
+        if self._menu is not None:
+            self._menu_input(ev, now)
+            return
         if ev.kind == Kind.KEY:
             ref = SlotRef(Kind.KEY, ev.index)
             fx = self._fx[ref.key]
@@ -257,9 +266,10 @@ class Engine(QObject):
                 fx.press_target, fx.down_at, fx.long_fired = 1.0, now, False
                 if self._slot(ref).long_action:
                     QTimer.singleShot(int(LONG_PRESS_S * 1000), lambda r=ref, t=now: self._long_press(r, t))
+                QTimer.singleShot(int(MENU_HOLD_S * 1000), lambda r=ref, t=now: self._menu_hold(r, t))
             elif ev.type == EventType.UP:
                 fx.press_target = 0.0
-                if getattr(self, "_swallow_up", None) == ev.index:
+                if self._swallow_up == ev.index:
                     self._swallow_up = None
                     return
                 if not fx.long_fired:
@@ -282,6 +292,98 @@ class Engine(QObject):
             a = self.page.swipe_left if ev.value < 0 else self.page.swipe_right
             self._run(a or {"type": "page", "target": "next" if ev.value < 0 else "prev"})
 
+    # ------------------------------------------------------------------ page menu
+    def _menu_hold(self, ref: SlotRef, t: float) -> None:
+        fx = self._fx[ref.key]
+        if fx.press_target > 0 and fx.down_at == t and not fx.long_fired and self._menu is None:
+            fx.long_fired = True               # the release must not run the key's action
+            self._swallow_up = ref.index
+            self.open_menu()
+
+    def _menu_pages(self) -> list[Page]:
+        return self.visible_pages()
+
+    def open_menu(self) -> None:
+        pages = self._menu_pages()
+        cur = next((i for i, p in enumerate(pages) if p.id == self.page.id), 0)
+        self._menu = {"t0": time.monotonic(), "sel": cur, "offset": (cur // 10) * 10, "last": time.monotonic()}
+        if self.profile.animations:
+            self._transition = Transition(time.monotonic(), 1, dict(self.images))
+        self._visuals.clear()
+
+    def close_menu(self, animate: bool = True) -> None:
+        if self._menu is None:
+            return
+        self._menu = None
+        if animate and self.profile.animations:
+            self._transition = Transition(time.monotonic(), -1, dict(self.images))
+        self._visuals.clear()
+
+    def _menu_pick(self, index: int) -> None:
+        pages = self._menu_pages()
+        if 0 <= index < len(pages):
+            target = pages[index].id
+            self.close_menu(animate=target == self.page.id)
+            self.goto(target)
+
+    def _menu_input(self, ev: InputEvent, now: float) -> None:
+        m = self._menu
+        m["last"] = now
+        pages = self._menu_pages()
+        if ev.kind == Kind.KEY:
+            fx = self._fx[f"key{ev.index}"]
+            if ev.type == EventType.DOWN:
+                fx.press_target = 1.0
+                return
+            fx.press_target = 0.0
+            if self._swallow_up == ev.index:      # release of the key that opened the menu
+                self._swallow_up = None
+                return
+            self._menu_pick(m["offset"] + ev.index)
+        elif ev.kind == Kind.ZONE:
+            self._fx[f"zone{ev.index}"].ripple_t0 = now
+            if ev.index == 0:
+                self.close_menu()
+            elif ev.index == 1:
+                start = self.profile.page(self.profile.start_page) or (pages[0] if pages else None)
+                if start:
+                    self._menu_pick(pages.index(start) if start in pages else 0)
+            else:
+                self._menu_pick(m["sel"])
+        elif ev.kind == Kind.KNOB:
+            if ev.type == EventType.ROTATE:
+                m["sel"] = (m["sel"] + ev.value) % max(1, len(pages))
+                m["offset"] = (m["sel"] // 10) * 10
+                self._visuals.clear()
+            else:
+                self._menu_pick(m["sel"])
+        elif ev.kind == Kind.SWIPE:
+            if len(pages) > 10:
+                m["offset"] = max(0, min(((len(pages) - 1) // 10) * 10, m["offset"] + (10 if ev.value < 0 else -10)))
+                m["sel"] = m["offset"]
+                self._visuals.clear()
+            else:
+                self.close_menu()
+
+    def _menu_visual(self, ref: SlotRef) -> Visual:
+        m = self._menu
+        pages = self._menu_pages()
+        if ref.kind == Kind.KEY:
+            i = m["offset"] + ref.index
+            if i >= len(pages):
+                return EMPTY
+            p = pages[i]
+            accent = p.accent or "#5b8cff"
+            base = QColor(accent).darker(420).name()
+            return Visual(bg=base, bg2="#05070b", accent=accent, icon=p.icon or "layers", label=p.name,
+                          active=p.id == self.page.id, top_band="#ffffff" if i == m["sel"] else None,
+                          badge=str(i + 1))
+        hints = [("undo-2", tr("menu.back")), ("house", tr("menu.home")),
+                 ("rotate-cw", tr("menu.turn")), ("pointer", tr("menu.push"))]
+        icon, label = hints[ref.index]
+        return Visual(bg="#11141c", bg2="#07090d", accent="#5b8cff", icon=icon, label=label,
+                      fg="#e6e9f0" if ref.index < 2 else "#8b93a7")
+
     def _long_press(self, ref: SlotRef, t: float) -> None:
         fx = self._fx[ref.key]
         if fx.press_target > 0 and fx.down_at == t:
@@ -294,6 +396,11 @@ class Engine(QObject):
 
     # ================================================================== deck actions
     def goto(self, target: str, direction: int | None = None, auto: bool = False) -> None:
+        if target == "menu":
+            self.close_menu() if self._menu is not None else self.open_menu()
+            return
+        if self._menu is not None:
+            self.close_menu(animate=False)
         pages = self.visible_pages()
         if not pages:
             return
@@ -323,6 +430,7 @@ class Engine(QObject):
             self._transition = Transition(time.monotonic(), direction, dict(self.images))
         self.page = new
         self._visuals.clear()
+        self._banner_t0 = time.monotonic()
         self.page_changed.emit(new.id)
 
     def change_brightness(self, op: str, step: int) -> None:
@@ -464,6 +572,8 @@ class Engine(QObject):
 
     # ================================================================== rendering
     def _visual(self, ref: SlotRef) -> Visual:
+        if self._menu is not None:
+            return self._menu_visual(ref)
         slot = self._slot(ref)
         st = slot.style
         if slot.empty:
@@ -534,10 +644,19 @@ class Engine(QObject):
         if self._boot_t0 >= 0:
             if self._draw_boot(now):
                 return
+        if self._menu is not None and now - self._menu["last"] > MENU_TIMEOUT_S:
+            self.close_menu()
         trans = self._transition
         if trans and now - trans.t0 > TRANSITION_S + 0.25:
             self._transition = trans = None
+        banner = self._menu is None and self._banner_t0 >= 0 and now - self._banner_t0 < BANNER_S
+        if self._banner_t0 >= 0 and not banner and self._menu is None:
+            self._banner_t0 = -1.0
+            for i in range(N4.zone_count):          # banner over: redraw the real zones
+                self._visuals.pop(f"zone{i}", None)
         for ref in SLOTS:
+            if banner and ref.kind == Kind.ZONE:
+                continue
             w, h = N4.size(ref.kind)
             v = self._visual(ref)
             fx = self._effects(ref.key, now)
@@ -552,6 +671,45 @@ class Engine(QObject):
                 img = self._compose_transition(ref, trans, img, now)
                 self._visuals.pop(ref.key, None)   # keep re-rendering until the slide finishes
             self._output(ref.key, ref, img)
+        if banner:
+            self._draw_banner(now)
+
+    def _draw_banner(self, now: float) -> None:
+        """Page name across the whole strip right after a page change, so you always know where you are."""
+        t = (now - self._banner_t0) / BANNER_S
+        alpha = min(1.0, t * 6) * min(1.0, (1 - t) * 4)
+        zw, zh = N4.zone_size
+        canvas = QImage(zw * 4, zh, QImage.Format.Format_RGB32)
+        canvas.fill(QColor("#000000"))
+        p = QPainter(canvas)
+        p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+        accent = QColor(self.page.accent or "#5b8cff")
+        g = QLinearGradient(0, 0, canvas.width(), 0)
+        dark = accent.darker(380)
+        g.setColorAt(0, QColor("#05070b"))
+        g.setColorAt(0.5, dark)
+        g.setColorAt(1, QColor("#05070b"))
+        p.setOpacity(alpha)
+        p.fillRect(QRectF(0, 0, canvas.width(), zh), g)
+        f = QFont(UI_FONT)
+        f.setPixelSize(int(zh * 0.42))
+        f.setWeight(QFont.Weight.Black)
+        p.setFont(f)
+        p.setPen(QColor("#ffffff"))
+        p.drawText(QRectF(0, 0, canvas.width(), zh * 0.78), Qt.AlignmentFlag.AlignCenter, self.page.name)
+        pages = self.visible_pages()
+        idx = next((i for i, pg in enumerate(pages) if pg.id == self.page.id), 0)
+        dot_w = 14
+        x0 = (canvas.width() - len(pages) * dot_w * 2) / 2
+        for i in range(len(pages)):
+            c = accent if i == idx else QColor(255, 255, 255, 70)
+            p.setBrush(c)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QRectF(x0 + i * dot_w * 2 + dot_w / 2, zh * 0.80, 8, 8))
+        p.end()
+        for i in range(N4.zone_count):
+            self._output(f"zone{i}", SlotRef(Kind.ZONE, i), canvas.copy(i * zw, 0, zw, zh))
+        self._visuals.pop("zone0", None)
 
     def _compose_transition(self, ref: SlotRef, trans: Transition, new: QImage, now: float) -> QImage:
         old = trans.old.get(ref.key)

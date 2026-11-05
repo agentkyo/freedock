@@ -35,6 +35,7 @@ dá o mesmo controle no Linux e traz o que o app oficial nunca teve.
 | 📊 **Widgets ao vivo** | Relógio, data, clima, CPU/GPU/RAM, rede, volume, estado do microfone, Pomodoro, cronômetro, status do OBS. |
 | 🏎️ **Assetto Corsa** | Marcha, voltas (roxo = melhor volta), posição, combustível, balanço de freio e temperatura dos pneus, direto da memória compartilhada. **Shift lights** na fileira de cima. As teclas disparam os *seus* binds, lidos do `controls.ini`. |
 | ✈️ **Flight Simulator 2020/2024** | Página de piloto automático: os knobs ajustam HDG, ALT, VS e BARO, e a faixa mostra os valores ao vivo. Trem, flaps, luzes e freios acendem conforme o simulador. Usa o SimConnect direto, sem SDK nem add-on pago. |
+| 🧭 **Você nunca se perde** | Em qualquer página, **segure uma tecla por 1,2 s** para abrir o menu de páginas. Toque na página que quer, ou gire qualquer knob e aperte para escolher. **Deslizar na faixa** sempre troca de página, e o nome da página aparece na faixa para você saber onde está. |
 | 🔁 **Páginas automáticas** | Abriu o Assetto Corsa ou o MSFS, o deck pula para a página dele. Fechou, ele volta. Funciona com qualquer `.exe`. |
 | ⌨️ **Ações** | Atalhos (gravados apertando as teclas), digitar texto, abrir sites ou arquivos, abrir programas, comandos, mídia, volume, microfone, rolagem, multiações com intervalo, webhooks, OBS. |
 | 🎛️ **Todos os controles** | 10 teclas (toque e segurar), 4 zonas touch, 4 knobs (esquerda, direita, apertar) e o deslizar na faixa. Cada zona da faixa funciona como o display do knob logo abaixo. |

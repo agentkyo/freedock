@@ -458,7 +458,7 @@ class MainWindow(QMainWindow):
         self.follow.setChecked(True)
         self.follow.setToolTip(tr("ui.follow_device_tip"))
         tips = QHBoxLayout()
-        tip = QLabel(tr("ui.view_hint"))
+        tip = QLabel(tr("ui.view_hint") + "\n" + tr("ui.nav_hint"))
         tip.setObjectName("muted")
         tips.addWidget(tip, 1)
         tips.addWidget(self.follow)

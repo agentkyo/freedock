@@ -250,7 +250,8 @@ class FieldForm(QWidget):
             w.currentIndexChanged.connect(lambda _, w=w, n=n: self._set(n, w.currentData()))
         elif f.kind == "page":
             w = QComboBox()
-            for val, label in (("next", tr("page.next")), ("prev", tr("page.prev")), ("back", tr("page.back"))):
+            for val, label in (("menu", tr("page.menu")), ("next", tr("page.next")), ("prev", tr("page.prev")),
+                               ("back", tr("page.back"))):
                 w.addItem(label, val)
             for p in self.context.profile.pages:
                 w.addItem(p.name, p.id)

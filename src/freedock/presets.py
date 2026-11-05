@@ -104,7 +104,7 @@ def daily(lang: str) -> Page:
         Slot(label=_t(lang, "deck"), icon="sun", style=st("#2b2205", "#120e02", "#facc15"),
              action={"type": "deck", "op": "screensaver"}),
         Slot(label=_t(lang, "scroll"), icon="mouse", style=SLATE),
-        Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "next"}),
+        Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "menu"}),
     ]
     p.knobs = [
         Knob(left={"type": "volume", "op": "down", "step": 2}, right={"type": "volume", "op": "up", "step": 2},
@@ -138,7 +138,7 @@ def windows(lang: str) -> Page:
         Slot(label=_t(lang, "vdesk"), icon="panels-top-left", style=SLATE, action=hk("win+tab")),
         Slot(label=_t(lang, "zoom"), icon="zoom-in", style=SLATE, action=hk("ctrl+0")),
         Slot(label=_t(lang, "snap"), icon="app-window", style=SLATE, action=hk("win+up")),
-        Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "next"}),
+        Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "menu"}),
     ]
     p.knobs = [
         Knob(left=hk("ctrl+win+left"), right=hk("ctrl+win+right"), press=hk("win+tab")),
@@ -268,7 +268,7 @@ def msfs_flight(lang: str) -> Page:
              widget=w("sim_toggle", var="LIGHT TAXI"), style=lights),
         Slot(label="Spoilers", widget=w("sim_value", var="SPOILERS HANDLE POSITION", units="percent",
                                         format="{:.0f}%"), action=ev("SPOILERS_ARM_TOGGLE"), style=inst),
-        Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "next"}),
+        Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "menu"}),
     ]
     p.knobs = [
         Knob(left=ev("COM_RADIO_WHOLE_DEC"), right=ev("COM_RADIO_WHOLE_INC"), press=ev("COM_STBY_RADIO_SWAP")),

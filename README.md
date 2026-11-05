@@ -35,6 +35,7 @@ the same control on Linux, and adds things the vendor app never had.
 | 📊 **Live widgets** | Clock, date, weather, CPU/GPU/RAM gauges, network, volume, mic state, Pomodoro, stopwatch, OBS status. |
 | 🏎️ **Assetto Corsa** | Gear, laps (purple = personal best), position, fuel, brake bias and tyre temps from shared memory. **Shift lights** run across the top row. Keys fire *your own* bindings, read from `controls.ini`. |
 | ✈️ **Flight Simulator 2020/2024** | An autopilot page: knobs set HDG, ALT, VS and BARO, and the strip shows the values live. Gear, flaps, lights and brakes light up from the sim. Uses SimConnect directly, no SDK or paid add-on. |
+| 🧭 **Never get lost** | On every page, **hold any key for 1.2 s** to open the page menu. Tap a page, or turn any knob and push to pick one. **Swiping the strip** always changes page, and the page name flashes across the strip so you know where you landed. |
 | 🔁 **Automatic pages** | Open Assetto Corsa or MSFS and the deck switches to its page, then switches back when you quit. Works with any `.exe`. |
 | ⌨️ **Actions** | Hotkeys (recorded by pressing them), type text, open URLs or files, launch apps, commands, media, volume, mic, scroll, multi-actions with delays, webhooks, OBS. |
 | 🎛️ **Every control** | 10 keys (tap and long-press), 4 touch zones, 4 knobs (left, right, push) and the strip swipe. Each strip zone acts as the display of the knob below it. |
