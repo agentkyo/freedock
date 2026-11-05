@@ -73,14 +73,61 @@ def _load(args):
     return settings, profile
 
 
+INSTANCE = "freedock-" + (os.environ.get("USERNAME") or os.environ.get("USER") or "user")
+
+
+def send_to_running(message: str) -> bool:
+    """Deliver a message ("show", "quit") to an already running FreeDock. True if one answered."""
+    from PySide6.QtNetwork import QLocalSocket
+    sock = QLocalSocket()
+    sock.connectToServer(INSTANCE)
+    if not sock.waitForConnected(400):
+        return False
+    sock.write(message.encode())
+    sock.waitForBytesWritten(400)
+    sock.disconnectFromServer()
+    return True
+
+
+def serve_instance(handlers: dict):
+    """Become the single running instance; ``handlers`` maps message -> callable."""
+    from PySide6.QtNetwork import QLocalServer
+    server = QLocalServer()
+    QLocalServer.removeServer(INSTANCE)
+    server.listen(INSTANCE)
+
+    def on_conn():
+        sock = server.nextPendingConnection()
+        sock.waitForReadyRead(400)
+        msg = bytes(sock.readAll().data()).decode(errors="ignore").strip()
+        if msg in handlers:
+            handlers[msg]()
+    server.newConnection.connect(on_conn)
+    return server
+
+
+def cmd_quit(args) -> int:
+    """Close a running FreeDock cleanly (it hands the screens back to the firmware)."""
+    _app(headless=True)
+    if send_to_running("quit"):
+        print("FreeDock is closing.")
+        return 0
+    print("FreeDock is not running.")
+    return 1
+
+
 def cmd_run(args) -> int:
     app = _app(headless=True)
+    if send_to_running("ping"):
+        print("FreeDock is already running (use 'freedock quit' first).")
+        return 1
     from .engine import Engine
     settings, profile = _load(args)
     engine = Engine(profile, settings)
     engine.device_changed.connect(lambda s: logging.info("device: %s", s or "disconnected"))
     engine.page_changed.connect(lambda p: logging.info("page: %s", p))
     engine.start()
+    _server = serve_instance({"quit": app.quit, "ping": lambda: None})  # noqa: F841 - keep alive
     signal.signal(signal.SIGINT, lambda *a: app.quit())
     signal.signal(signal.SIGTERM, lambda *a: app.quit())
     from PySide6.QtCore import QTimer
@@ -173,6 +220,8 @@ def gui_main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
     app = _app(headless=False)
+    if send_to_running("show"):       # already running: just bring its window up
+        return 0
     from .gui.main_window import run_gui
     settings, profile = _load(args)
     return run_gui(app, profile, settings, minimized=args.minimized or settings.start_minimized)
@@ -194,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--profile")
     r.add_argument("--lang")
     sub.add_parser("list", help="list connected devices")
+    sub.add_parser("quit", help="close a running FreeDock cleanly")
     sub.add_parser("events", help="print decoded key/knob/touch events")
     pv = sub.add_parser("preview", help="render all pages to PNG files")
     pv.add_argument("--out", default="preview")
@@ -206,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--lang")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
-    handlers = {"run": cmd_run, "list": cmd_list, "events": cmd_events, "preview": cmd_preview,
+    handlers = {"quit": cmd_quit, "run": cmd_run, "list": cmd_list, "events": cmd_events, "preview": cmd_preview,
                 "import-streamdock": cmd_import, "reset-profile": cmd_reset}
     if args.cmd in (None, "gui"):
         return gui_main([])

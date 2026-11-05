@@ -712,7 +712,12 @@ def run_gui(app: QApplication, profile: Profile, settings: Settings, minimized: 
     set_language(settings.language)
     engine = Engine(profile, settings)
     win = MainWindow(engine, profile, settings)
+    from ..cli import serve_instance
+    win._instance_server = serve_instance({"show": win._show, "quit": win.quit, "ping": lambda: None})
     engine.start()
+    import signal
+    signal.signal(signal.SIGINT, lambda *a: win.quit())
+    app.aboutToQuit.connect(lambda: engine.stop())
     if not minimized:
         win.show()
     code = app.exec()

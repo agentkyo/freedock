@@ -65,6 +65,7 @@ class N4Device:
         self._alive = True
         self._lost_reported = False
         self.firmware = self._read_firmware()
+        self._resync()
         self._send(protocol.wake_screen())
         self._threads = [
             threading.Thread(target=self._reader, name="n4-reader", daemon=True),
@@ -126,6 +127,20 @@ class N4Device:
             written = self._dev.write(report)
         if written != len(report):
             raise OSError(f"short write ({written} of {len(report)})")
+
+    def _resync(self) -> None:
+        """Recover a panel left mid-upload by a program that died while sending an image.
+
+        After a ``BAT`` header the firmware swallows the next *length* bytes as JPEG data, so a
+        killed sender leaves it treating every later command as picture bytes - the screen
+        freezes. Ten blank reports cover the largest possible image (10 KiB); then wipe and commit.
+        """
+        blank = b"\x00" * protocol.REPORT_SIZE
+        for _ in range(protocol.MAX_IMAGE_BYTES // protocol.PACKET_SIZE):
+            self._send(blank)
+        self._send(protocol.flush())
+        self._send(protocol.clear())
+        self._send(protocol.flush())
 
     def _read_firmware(self) -> str | None:
         for getter in (lambda: self._dev.get_feature_report(1, 20),
