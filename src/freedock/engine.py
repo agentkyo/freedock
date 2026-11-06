@@ -28,6 +28,7 @@ from .render import Fx, Visual, render, to_device_jpeg
 from .render.painter import MONO_FONT, UI_FONT, ease_in_out, ease_out_cubic, load_fonts, picture_frame
 from .settings import Settings
 from . import style as looks
+from .i18n import language as tr_language
 from .i18n import tr
 from .widgets import WIDGETS
 from .notify import HttpBridge, NotifyCenter, source as notify_source, EVENT_COLOR
@@ -102,6 +103,10 @@ class Transition:
     t0: float
     direction: int
     old: dict[str, QImage] = field(default_factory=dict)
+
+
+IDLE_DIM = 0.5          # idle screen brightness, relative to the user's setting
+IDLE_DIM_MIN = 15
 
 
 class Engine(QObject):
@@ -470,11 +475,17 @@ class Engine(QObject):
         elif op == "screensaver":
             self._screensaver = True
             self._ss_t0 = time.monotonic()
+            self._ss_last = -1.0
+            if self.device and self.profile.brightness > IDLE_DIM_MIN:
+                # dim the idle screen: easier on the eyes at night and on the LCDs over hours
+                self.device.set_brightness(max(IDLE_DIM_MIN, round(self.profile.brightness * IDLE_DIM)))
         elif op == "reload":
             self._sent.clear()
             self._visuals.clear()
 
     def _wake(self) -> None:
+        if self._screensaver and self.device:
+            self.device.set_brightness(self.profile.brightness)
         self._screensaver = False
         if self._asleep:
             self._asleep = False
@@ -1081,24 +1092,37 @@ class Engine(QObject):
         return True
 
     def _draw_screensaver(self, now: float) -> None:
-        if int(now * FPS) % 3:   # 10 fps is plenty for a slow aurora
+        # Two frames a second is enough for a clock and keeps the USB link nearly idle for hours
+        # (each frame re-uploads every tile whose picture changed).
+        if now - getattr(self, "_ss_last", -1.0) < 0.5:
             return
+        self._ss_last = now
         t = now - getattr(self, "_ss_t0", now)
-        clock = time.strftime("%H:%M")
+        if self.profile.idle_mode != "clock":
+            self._draw_aurora(t)
+            return
+        from .render import idle
+        stats = self.stats if "stats" in self._started else {}
+        alerts = []
+        for sid in self.notify_center.pending():
+            src, st = notify_source(sid), self.notify_center.get(sid)
+            alerts.append((EVENT_COLOR.get(st.status, src.color), src.icon,
+                           f"{src.name}: {st.message}" if st.message else src.name))
+        info = idle.IdleInfo(now=time.localtime(), lang=tr_language(), weather=self.weather_data() or {},
+                             cpu=stats.get("cpu") if stats else None, ram=stats.get("ram") if stats else None,
+                             alerts=alerts)
+        for i, img in enumerate(idle.keys(info, t, N4.key_size, N4.key_count)):
+            self._output(f"key{i}", SlotRef(Kind.KEY, i), img)
+        for i, img in enumerate(idle.zones(info, t, N4.zone_size, N4.zone_count)):
+            self._output(f"zone{i}", SlotRef(Kind.ZONE, i), img)
 
+    def _draw_aurora(self, t: float) -> None:
         def paint(p: QPainter, w: int, h: int):
             g = QLinearGradient(0, 0, w, h)
             for k in range(4):
-                hue = (t * 12 + k * 70) % 360
-                g.setColorAt(k / 3, QColor.fromHsv(int(hue), 200, 120 + int(40 * math.sin(t + k))))
+                hue = (t * 6 + k * 70) % 360
+                g.setColorAt(k / 3, QColor.fromHsv(int(hue), 200, 90 + int(30 * math.sin(t / 3 + k))))
             p.fillRect(QRectF(0, 0, w, h), g)
-            if self.profile.idle_mode == "clock":
-                f = QFont(MONO_FONT)
-                f.setPixelSize(int(h * 0.62))
-                f.setWeight(QFont.Weight.Bold)
-                p.setFont(f)
-                p.setPen(QColor(255, 255, 255, 235))
-                p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, clock)
 
         self._draw_canvas(paint)
         for i in range(N4.zone_count):

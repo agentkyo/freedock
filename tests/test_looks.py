@@ -132,3 +132,15 @@ def test_http_bridge_refuses_web_pages():
         assert err.value.code == 403 and len(eng.events) == 1
     finally:
         bridge.stop()
+
+
+def test_idle_screen_renders_every_tile():
+    import time
+    from freedock.render import idle
+    now = time.strptime("2026-11-06 10:31:07", "%Y-%m-%d %H:%M:%S")
+    for info in (idle.IdleInfo(now=now, lang="pt", weather={"temp": 23.0, "icon": "cloud-sun"}, cpu=12, ram=58),
+                 idle.IdleInfo(now=now, lang="en", alerts=[("#22c55e", "sparkles", "Claude: done")])):
+        ks = idle.keys(info, 12.0, (112, 112))
+        zs = idle.zones(info, 12.0, (176, 112))
+        assert len(ks) == 10 and len(zs) == 4
+        assert all(k.width() == 112 for k in ks) and all(z.width() == 176 for z in zs)

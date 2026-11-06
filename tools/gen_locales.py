@@ -98,7 +98,7 @@ T = {
     "ac.pit_limiter": ("Pit limiter", "Limitador de box", "Limitador de boxes"),
     "ac.lap_n": ("Lap {n}", "Volta {n}", "Vuelta {n}"),
     "ac.no_key": ("no keyboard key", "sem tecla no teclado", "sin tecla"),
-    "idle.clock": ("Aurora + clock", "Aurora + relógio", "Aurora + reloj"),
+    "idle.clock": ("Clock, date, weather and CPU", "Relógio, data, clima e CPU", "Reloj, fecha, clima y CPU"),
     "idle.aurora": ("Aurora", "Aurora", "Aurora"),
     "idle.off": ("Screen off", "Tela apagada", "Pantalla apagada"),
     "field.keys": ("Keys", "Teclas", "Teclas"),

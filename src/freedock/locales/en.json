@@ -168,7 +168,7 @@
  "field.var": "SimVar",
  "field.which": "Which",
  "idle.aurora": "Aurora",
- "idle.clock": "Aurora + clock",
+ "idle.clock": "Clock, date, weather and CPU",
  "idle.off": "Screen off",
  "lights.all": "Strip + keyboard",
  "lights.chroma": "Razer Chroma",
