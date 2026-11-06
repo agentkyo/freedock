@@ -1106,8 +1106,8 @@ class Engine(QObject):
         alerts = []
         for sid in self.notify_center.pending():
             src, st = notify_source(sid), self.notify_center.get(sid)
-            alerts.append((EVENT_COLOR.get(st.status, src.color), src.icon,
-                           f"{src.name}: {st.message}" if st.message else src.name))
+            alerts.append((EVENT_COLOR.get(st.status, src.color), src.icon, src.name,
+                           tr(f"ai.{st.status}") if st.status in ("done", "question", "error") else ""))
         info = idle.IdleInfo(now=time.localtime(), lang=tr_language(), weather=self.weather_data() or {},
                              cpu=stats.get("cpu") if stats else None, ram=stats.get("ram") if stats else None,
                              alerts=alerts)

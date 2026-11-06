@@ -141,7 +141,9 @@ def _hook_stdin() -> str:
     try:
         if sys.stdin is None or sys.stdin.isatty():
             return ""
-        return sys.stdin.read(1_000_000)
+        # Claude Code writes UTF-8; text-mode stdin on Windows would decode it as cp1252 (mojibake)
+        raw = sys.stdin.buffer.read(1_000_000) if hasattr(sys.stdin, "buffer") else sys.stdin.read().encode()
+        return raw.decode("utf-8-sig", errors="replace")
     except (OSError, ValueError):
         return ""
 

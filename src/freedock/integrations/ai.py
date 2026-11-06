@@ -701,6 +701,23 @@ def claude_hooks_patch(settings: dict, command: list[str], subagents: bool = Fal
     return new
 
 
+def short_message(text: str | None, limit: int = 90) -> str | None:
+    """First sentence of an assistant reply, without markdown - fits a toast or a strip zone."""
+    if not text:
+        return None
+    import re
+    line = next((ln.strip() for ln in str(text).splitlines() if ln.strip()), "")
+    line = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", line)        # [text](url) -> text
+    line = re.sub(r"[*_`#>]+", "", line)
+    line = re.sub(r"^\s*(-|•|\d+[.)])\s+", "", line).strip()
+    m = re.compile(r"[.!?](\s|$)").search(line, 20)           # first sentence, not a tiny "Ok."
+    if m:
+        line = line[:m.end()].strip()
+    if len(line) > limit:
+        line = line[:limit - 1].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return line or None
+
+
 def claude_event_from_hook(payload: str | dict) -> tuple[str, str | None] | None:
     """Map a Claude Code hook stdin payload to (event, message) - for a notify that reads stdin."""
     try:
@@ -720,7 +737,7 @@ def claude_event_from_hook(payload: str | dict) -> tuple[str, str | None] | None
     if name not in table:
         return None
     msg = p.get("last_assistant_message") if name == "Stop" else p.get("error") if name == "StopFailure" else None
-    return table[name], (str(msg)[:200] if msg else None)
+    return table[name], short_message(msg)
 
 
 def _shell_quote(arg: str) -> str:

@@ -32,7 +32,7 @@ class IdleInfo:
     weather: dict = field(default_factory=dict)     # {"temp", "icon", "text"} or {}
     cpu: float | None = None
     ram: float | None = None
-    alerts: list = field(default_factory=list)      # [(color, icon, text)] for the strip
+    alerts: list = field(default_factory=list)      # [(color, icon, name, status)] for the strip
 
 
 def _canvas(w: int, h: int) -> tuple[QImage, QPainter]:
@@ -63,17 +63,22 @@ def _font(family: str, px: int, weight=QFont.Weight.Bold) -> QFont:
 
 
 def _text(p: QPainter, rect: QRectF, text: str, family: str, px: int, color: QColor,
-          weight=QFont.Weight.Bold, align=Qt.AlignmentFlag.AlignCenter) -> None:
+          weight=QFont.Weight.Bold, align=Qt.AlignmentFlag.AlignCenter, min_px: int = 8) -> None:
     f = _font(family, px, weight)
-    # shrink until it fits the rect (weekday names vary a lot between languages)
-    while px > 8:
+    # shrink until it fits the rect (weekday names vary a lot between languages);
+    # below min_px, wrap onto two lines instead of becoming unreadable
+    flags = int(align)
+    while True:
         f.setPixelSize(px)
         p.setFont(f)
         if p.fontMetrics().horizontalAdvance(text) <= rect.width():
             break
+        if px - 2 < min_px:
+            flags |= int(Qt.TextFlag.TextWordWrap)
+            break
         px -= 2
     p.setPen(color)
-    p.drawText(rect, align, text)
+    p.drawText(rect, flags, text)
 
 
 def _drift(t: float) -> tuple[float, float]:
@@ -142,7 +147,9 @@ def _info_key(top: str, main: str, size: tuple[int, int], t: float, col: int,
         p.drawRoundedRect(track, 3.5, 3.5)
         level = QColor("#22c55e") if frac < 0.6 else QColor("#f59e0b") if frac < 0.85 else QColor("#ef4444")
         p.setBrush(level)
-        p.drawRoundedRect(QRectF(track.x(), track.y(), track.width() * frac, track.height()), 3.5, 3.5)
+        if frac > 0:   # even 2 % shows as a dot, so the bar never looks broken
+            p.drawRoundedRect(QRectF(track.x(), track.y(), max(track.height(), track.width() * frac),
+                                     track.height()), 3.5, 3.5)
     p.end()
     return img
 
@@ -180,15 +187,21 @@ def zones(info: IdleInfo, t: float, size: tuple[int, int], count: int = 4) -> li
     for i in range(count):
         img, p = _canvas(w, h)
         if i < len(alerts):
-            color, icon, text = alerts[i]
+            color, icon, name, status = alerts[i]
             c = QColor(color)
-            pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(t * 3))
+            pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(t * 2.5))
             _glow(p, w, h, c.hsvHue() if c.hsvHue() >= 0 else 0, pulse)
-            if ic := icon_image(icon, color, int(h * 0.42), 2.0):
+            isz = int(h * 0.40)
+            if ic := icon_image(icon, color, isz, 2.2):
                 p.drawImage(QPointF(12, (h - ic.height()) / 2), ic)
-            _text(p, QRectF(16 + h * 0.42, 6, w - 26 - h * 0.42, h - 12), text, UI_FONT, int(h * 0.22),
-                  QColor(245, 247, 251), QFont.Weight.DemiBold,
-                  Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap)
+            x = 22 + isz
+            left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            _text(p, QRectF(x, h * 0.16, w - x - 8, h * 0.36), name, UI_FONT, int(h * 0.30),
+                  QColor(245, 247, 251), QFont.Weight.Bold, left)
+            if status:
+                _text(p, QRectF(x, h * 0.50, w - x - 6, h * 0.44), status, UI_FONT, int(h * 0.21), c,
+                      QFont.Weight.DemiBold, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                      min_px=17)
         else:
             # a dim band that continues across the strip; the zones light up left to right in turn
             phase = (t / 4 - i * 0.25) % 1.0

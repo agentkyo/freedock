@@ -264,3 +264,13 @@ def test_launch_commands():
     assert win["codex_app"][1].startswith("shell:AppsFolder\\")
     lin = ai.launch_commands("linux")
     assert lin["claude"][-1] == "claude"
+
+
+def test_short_message_for_toasts_and_strip():
+    from freedock.integrations.ai import short_message
+    text = "**Pronto: o software chinês saiu inteiro do PC.** A tela nova já está instalada.\n\nMais"
+    assert short_message(text) == "Pronto: o software chinês saiu inteiro do PC."
+    assert short_message("- item um") == "item um"
+    assert short_message("Veja [o guia](http://x) agora") == "Veja o guia agora"
+    assert len(short_message("palavra " * 40)) <= 90
+    assert short_message("") is None

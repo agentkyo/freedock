@@ -139,7 +139,7 @@ def test_idle_screen_renders_every_tile():
     from freedock.render import idle
     now = time.strptime("2026-11-06 10:31:07", "%Y-%m-%d %H:%M:%S")
     for info in (idle.IdleInfo(now=now, lang="pt", weather={"temp": 23.0, "icon": "cloud-sun"}, cpu=12, ram=58),
-                 idle.IdleInfo(now=now, lang="en", alerts=[("#22c55e", "sparkles", "Claude: done")])):
+                 idle.IdleInfo(now=now, lang="en", alerts=[("#22c55e", "sparkles", "Claude", "Done")])):
         ks = idle.keys(info, 12.0, (112, 112))
         zs = idle.zones(info, 12.0, (176, 112))
         assert len(ks) == 10 and len(zs) == 4
