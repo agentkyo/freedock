@@ -22,6 +22,18 @@ def _setup_logging(verbose: bool) -> None:
     except OSError:
         pass
     logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s", handlers=handlers)
+    # a native crash (driver, COM, ctypes) kills the process without a Python traceback;
+    # faulthandler writes every thread's stack to crash.log so it can be diagnosed
+    try:
+        import faulthandler
+        global _crash_file
+        _crash_file = open(config_dir() / "crash.log", "a", encoding="utf-8")  # noqa: SIM115
+        faulthandler.enable(_crash_file, all_threads=True)
+    except OSError:
+        pass
+
+
+_crash_file = None
 
 
 def _app(headless: bool):
@@ -211,6 +223,38 @@ def cmd_reset(args) -> int:
     return 0
 
 
+def _supervise(argv: list[str]) -> int:
+    """Run the GUI in a child process and bring it back if it dies.
+
+    A native crash (a driver, COM or ctypes fault) takes the process down mid-upload and leaves
+    the panel frozen on its last image. The restarted child resyncs the panel on connect, so the
+    deck recovers by itself in a few seconds instead of staying stuck until someone notices.
+    """
+    import subprocess
+    from PySide6.QtCore import QCoreApplication
+    QCoreApplication([])
+    if send_to_running("show"):
+        return 0
+    env = dict(os.environ, FREEDOCK_CHILD="1")
+    cmd = [sys.executable, "-m", "freedock", *argv]
+    quick_crashes = 0
+    while True:
+        started = time.monotonic()
+        code = subprocess.call(cmd, env=env)
+        if code == 0:
+            return 0
+        lived = time.monotonic() - started
+        quick_crashes = quick_crashes + 1 if lived < 20 else 0
+        logging.error("FreeDock exited with code %s (0x%08X) after %.0f s", code, code & 0xFFFFFFFF, lived)
+        if quick_crashes >= 3:
+            logging.error("crashed 3 times in a row right after starting; giving up")
+            return code
+        time.sleep(2)
+        logging.info("restarting FreeDock")
+        if "--minimized" not in cmd:
+            cmd.append("--minimized")       # a restart should not pop the editor up in front of a game
+
+
 def gui_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="freedock-gui")
     parser.add_argument("--minimized", action="store_true")
@@ -219,6 +263,8 @@ def gui_main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
+    if not os.environ.get("FREEDOCK_CHILD") and not os.environ.get("FREEDOCK_NO_SUPERVISOR"):
+        return _supervise(sys.argv[1:] if argv is None else list(argv))
     app = _app(headless=False)
     if send_to_running("show"):       # already running: just bring its window up
         return 0

@@ -179,7 +179,6 @@ class _AudioThread:
         self._q.put((fn_name, args))
 
     def _endpoints(self):
-        from ctypes import POINTER, cast
         from comtypes import CLSCTX_ALL
         from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
@@ -187,7 +186,10 @@ class _AudioThread:
             if dev is None:
                 return None
             raw = getattr(dev, "_dev", dev)   # pycaw >= 2024 wraps the IMMDevice
-            return cast(raw.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None), POINTER(IAudioEndpointVolume))
+            # QueryInterface takes its own reference. ctypes.cast() does not, yet both pointers
+            # call Release() when collected: the endpoint got released twice and the next call
+            # into it crashed the whole process (access violation in _ctypes).
+            return raw.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(IAudioEndpointVolume)
 
         spk = activate(AudioUtilities.GetSpeakers())
         try:
@@ -204,8 +206,8 @@ class _AudioThread:
         refreshed = 0.0
         while True:
             try:
-                # re-resolve the default devices every 5 s so a new headset is picked up
-                if spk is None or time.monotonic() - refreshed > 5:
+                # re-resolve the default devices now and then so a new headset is picked up
+                if spk is None or time.monotonic() - refreshed > 15:
                     spk = mic = None
                     spk, mic = self._endpoints()
                     refreshed = time.monotonic()
