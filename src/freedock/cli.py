@@ -301,6 +301,7 @@ def cmd_run(args) -> int:
 
 def cmd_preview(args) -> int:
     """Render every page to PNG (what the deck would show) without touching the device."""
+    os.environ["FREEDOCK_NO_AUDIO"] = "1"      # rendering only: never open the microphone / PortAudio
     _app(headless=True)
     from PySide6.QtGui import QColor, QImage, QPainter
     from .device import N4, Kind
