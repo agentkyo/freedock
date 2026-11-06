@@ -844,6 +844,7 @@ def run_gui(app: QApplication, profile: Profile, settings: Settings, minimized: 
     win = MainWindow(engine, profile, settings)
     from ..cli import serve_instance
     from ..cli import _deliver_notify
+    engine.on_quit = win.quit
     win._instance_server = serve_instance({"show": win._show, "quit": win.quit, "ping": lambda: None,
                                            "notify": lambda arg: _deliver_notify(engine, arg)})
     engine.start()

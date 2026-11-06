@@ -88,8 +88,10 @@ def _load(args):
 INSTANCE = "freedock-" + (os.environ.get("USERNAME") or os.environ.get("USER") or "user")
 
 
-def send_to_running(message: str) -> bool:
-    """Deliver a message ("show", "quit") to an already running FreeDock. True if one answered."""
+def send_to_running(message: str, need_ack: bool = False) -> bool:
+    """Deliver a message ("show", "quit", "notify {...}") to an already running FreeDock.
+
+    True if one is running (``need_ack``: only if it also confirmed it got the message)."""
     from PySide6.QtNetwork import QLocalSocket
     sock = QLocalSocket()
     sock.connectToServer(INSTANCE)
@@ -97,8 +99,9 @@ def send_to_running(message: str) -> bool:
         return False
     sock.write(message.encode())
     sock.waitForBytesWritten(400)
+    acked = sock.waitForReadyRead(2000) and bytes(sock.readAll().data()).startswith(b"ok")
     sock.disconnectFromServer()
-    return True
+    return acked if need_ack else True
 
 
 def serve_instance(handlers: dict):
@@ -113,6 +116,9 @@ def serve_instance(handlers: dict):
         sock.waitForReadyRead(400)
         msg = bytes(sock.readAll().data()).decode(errors="ignore").strip()
         name, _, arg = msg.partition(" ")
+        if msg:
+            sock.write(b"ok")                 # acknowledge before acting: "quit" ends this process
+            sock.waitForBytesWritten(200)
         if name in handlers:
             try:
                 handlers[name](arg) if arg else handlers[name]()
@@ -216,10 +222,22 @@ def cmd_ai(args) -> int:
 def cmd_quit(args) -> int:
     """Close a running FreeDock cleanly (it hands the screens back to the firmware)."""
     _app(headless=True)
-    if send_to_running("quit"):
+    if send_to_running("quit", need_ack=True):
         print("FreeDock is closing.")
         return 0
-    print("FreeDock is not running.")
+    # running but not answering on the instance socket: try the HTTP bridge
+    from .settings import Settings
+    import urllib.request
+    port = int((Settings.load().notify or {}).get("http_port") or 0)
+    if port:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/quit", timeout=3) as r:  # noqa: S310
+                if r.status == 200:
+                    print("FreeDock is closing (via HTTP).")
+                    return 0
+        except OSError:
+            pass
+    print("FreeDock is not running." if not send_to_running("ping") else "FreeDock is running but not answering.")
     return 1
 
 
@@ -234,6 +252,7 @@ def cmd_run(args) -> int:
     engine.device_changed.connect(lambda s: logging.info("device: %s", s or "disconnected"))
     engine.page_changed.connect(lambda p: logging.info("page: %s", p))
     engine.start()
+    engine.on_quit = app.quit
     _server = serve_instance({"quit": app.quit, "ping": lambda: None,  # noqa: F841 - keep alive
                               "notify": lambda arg: _deliver_notify(engine, arg)})
     signal.signal(signal.SIGINT, lambda *a: app.quit())

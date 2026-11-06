@@ -96,3 +96,39 @@ def test_old_profiles_get_new_pages_once():
     prof.pages = [p for p in prof.pages if p.id != "ets2"]
     assert add_new_presets(prof, "pt") is False
     assert prof.page("ets2") is None
+
+
+def test_http_bridge_refuses_web_pages():
+    import json
+    import urllib.error
+    import urllib.request
+
+    from freedock.notify import HttpBridge
+
+    class FakeEngine:
+        def __init__(self):
+            from freedock.notify import NotifyCenter
+            self.notify_center = NotifyCenter()
+            self.events = []
+
+        def call_in_ui(self, fn):
+            fn()
+
+        def notify_event(self, *a):
+            self.events.append(a)
+
+    eng = FakeEngine()
+    bridge = HttpBridge(eng, 0)
+    bridge.port = 47899
+    bridge.start()
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:47899/notify?source=x&event=done&message=hi", timeout=3) as r:
+            assert json.load(r)["ok"] is True
+        assert eng.events == [("x", "done", "hi", None)]
+        req = urllib.request.Request("http://127.0.0.1:47899/notify?source=x&event=done",
+                                     headers={"Origin": "https://evil.example"})
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(req, timeout=3)
+        assert err.value.code == 403 and len(eng.events) == 1
+    finally:
+        bridge.stop()

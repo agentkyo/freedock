@@ -7,9 +7,11 @@ Three ways in, all ending in :meth:`Engine.notify_event`:
   FreeDock over its single-instance socket and exits at once.
 * ``http://127.0.0.1:47810/notify?source=claude&event=done&message=...`` (GET or POST, JSON body
   also accepted) for anything that can make an HTTP request: shell scripts, Home Assistant, CI.
-* ``GET /state`` returns the current state of every source as JSON.
+* ``GET /state`` returns the current state of every source as JSON; ``/quit`` closes FreeDock.
 
-Only the loopback interface is bound; nothing is reachable from the network.
+Only the loopback interface is bound, so nothing is reachable from the network, and requests that a
+browser marks as coming from a web page (``Origin`` / ``Sec-Fetch-Site``) are refused, so a website
+cannot poke the deck through the user's browser.
 """
 from __future__ import annotations
 
@@ -155,10 +157,26 @@ class _Handler(BaseHTTPRequestHandler):
                 params.update({k: v[-1] for k, v in parse_qs(raw.decode(errors="ignore")).items()})
         return params
 
+    def _from_browser(self) -> bool:
+        """Web pages can fire requests at 127.0.0.1 too; real browsers label them, scripts don't."""
+        site = self.headers.get("Sec-Fetch-Site")
+        return bool(self.headers.get("Origin")) or (site is not None and site not in ("none",))
+
     def _handle(self) -> None:
+        if self._from_browser():
+            self._reply(403, {"error": "requests from web pages are not accepted"})
+            return
         url = urlparse(self.path)
         if url.path == "/state":
             self._reply(200, self.engine.notify_center.snapshot())
+            return
+        if url.path == "/quit":
+            quit_fn = getattr(self.engine, "on_quit", None)
+            if quit_fn is None:
+                self._reply(404, {"error": "quit not available"})
+                return
+            self._reply(200, {"ok": True})
+            self.engine.call_in_ui(quit_fn)
             return
         if url.path != "/notify":
             self._reply(404, {"error": "use /notify or /state"})
