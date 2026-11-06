@@ -69,6 +69,10 @@ It installs into `%LOCALAPPDATA%\FreeDock` and runs through the signed `pythonw.
 python.org, so it also works with **Smart App Control** enabled. Turn on *Settings → Start with
 the computer* to keep it in the tray.
 
+**Standalone `FreeDock.exe`** (no Python needed on the target PC): run
+`python packaging\windowsuild_exe.py` in a clone with `pip install pyinstaller`. The exe is
+not code-signed, so Windows blocks it while Smart App Control is on.
+
 ### Linux (any distro)
 
 ```bash

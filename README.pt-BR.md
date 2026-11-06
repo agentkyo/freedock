@@ -69,6 +69,10 @@ Instala em `%LOCALAPPDATA%\FreeDock` e roda pelo `pythonw.exe` assinado do pytho
 funciona até com o **Controle Inteligente de Aplicativos** (Smart App Control) ligado. Ative
 *Configurações → Iniciar com o computador* para deixá-lo na bandeja.
 
+**`FreeDock.exe` independente** (sem Python no PC de destino): rode
+`python packaging\windowsuild_exe.py` num clone com `pip install pyinstaller`. O exe não tem
+assinatura digital, então o Windows o bloqueia enquanto o Smart App Control estiver ligado.
+
 ### Linux (qualquer distro)
 
 ```bash

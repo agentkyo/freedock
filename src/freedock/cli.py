@@ -223,6 +223,19 @@ def cmd_reset(args) -> int:
     return 0
 
 
+def launch_command(gui: bool = True) -> list[str]:
+    """How to start FreeDock again: the frozen FreeDock.exe, or the interpreter running the package.
+
+    ``gui`` picks pythonw.exe on Windows so no console window appears.
+    """
+    exe = Path(sys.executable)
+    if getattr(sys, "frozen", False):
+        return [str(exe)]
+    if gui and sys.platform == "win32" and exe.with_name("pythonw.exe").exists():
+        exe = exe.with_name("pythonw.exe")
+    return [str(exe), "-m", "freedock"]
+
+
 def _supervise(argv: list[str]) -> int:
     """Run the GUI in a child process and bring it back if it dies.
 
@@ -236,7 +249,7 @@ def _supervise(argv: list[str]) -> int:
     if send_to_running("show"):
         return 0
     env = dict(os.environ, FREEDOCK_CHILD="1")
-    cmd = [sys.executable, "-m", "freedock", *argv]
+    cmd = [*launch_command(), *argv]
     quick_crashes = 0
     while True:
         started = time.monotonic()

@@ -5,6 +5,8 @@ import copy
 import json
 import logging
 import os
+import shlex
+import subprocess
 import sys
 import urllib.parse
 import urllib.request
@@ -50,14 +52,14 @@ def autostart_enabled() -> bool:
 
 
 def set_autostart(on: bool) -> None:
-    exe = Path(sys.executable)
-    pyw = exe.with_name("pythonw.exe") if sys.platform == "win32" and exe.with_name("pythonw.exe").exists() else exe
+    from ..cli import launch_command
+    cmd = launch_command() + ["--minimized"]
     if sys.platform == "win32":
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
                             winreg.KEY_SET_VALUE) as k:
             if on:
-                winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, f'"{pyw}" -m freedock --minimized')
+                winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, subprocess.list2cmdline(cmd))
             else:
                 try:
                     winreg.DeleteValue(k, APP_NAME)
@@ -67,7 +69,7 @@ def set_autostart(on: bool) -> None:
     path = Path.home() / ".config" / "autostart" / "freedock.desktop"
     if on:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"[Desktop Entry]\nType=Application\nName=FreeDock\nExec={exe} -m freedock --minimized\n"
+        path.write_text(f"[Desktop Entry]\nType=Application\nName=FreeDock\nExec={shlex.join(cmd)}\n"
                         "Icon=input-keyboard\nX-GNOME-Autostart-enabled=true\n", encoding="utf-8")
     elif path.exists():
         path.unlink()
