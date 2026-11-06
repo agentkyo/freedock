@@ -70,7 +70,7 @@ así que funciona incluso con **Smart App Control** activado. Activa *Ajustes �
 equipo* para dejarlo en la bandeja.
 
 **`FreeDock.exe` independiente** (sin Python en el PC de destino): ejecuta
-`python packaging\windowsuild_exe.py` en un clon con `pip install pyinstaller`. El exe no está
+`python packaging\windows\build_exe.py` en un clon con `pip install pyinstaller`. El exe no está
 firmado, así que Windows lo bloquea mientras Smart App Control esté activado.
 
 ### Linux (cualquier distro)
