@@ -61,6 +61,8 @@ sola app pequeña, da el mismo control en Linux y añade lo que la app oficial n
 
 ### Windows 10 / 11
 
+**Exe listo:** descarga [FreeDock-windows-x64.zip](https://github.com/agentkyo/freedock/releases/download/nightly/FreeDock-windows-x64.zip) (se genera en cada actualización), descomprímelo donde quieras y ejecuta `FreeDock.exe`. O instálalo con Python:
+
 ```powershell
 irm https://raw.githubusercontent.com/agentkyo/freedock/main/packaging/windows/install.ps1 | iex
 ```

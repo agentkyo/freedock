@@ -61,6 +61,8 @@ the same control on Linux, and adds things the vendor app never had.
 
 ### Windows 10 / 11
 
+**Ready-made exe:** download [FreeDock-windows-x64.zip](https://github.com/agentkyo/freedock/releases/download/nightly/FreeDock-windows-x64.zip) (rebuilt on every update), unzip it anywhere and run `FreeDock.exe`. Or install through Python:
+
 ```powershell
 irm https://raw.githubusercontent.com/agentkyo/freedock/main/packaging/windows/install.ps1 | iex
 ```
