@@ -354,6 +354,29 @@ def test_chroma_absent_logs_once_and_retries_every_30s(caplog):
     assert chroma.status() == "connected"
 
 
+def test_chroma_absent_does_not_busy_wait():
+    # regression: with Synapse not answering, pending colours made _has_work() true, so the worker
+    # thread never slept during the 30 s retry delay and burned a CPU core (deck became sluggish)
+    chroma, http, clock = make_chroma(up=False)
+    chroma.flash((255, 0, 0))
+    run_chroma(chroma, clock, 2, step=0.5)
+    assert chroma.session is None and chroma._pending
+    assert chroma._has_work() is False
+
+
+def test_garbage_http_reply_is_an_oserror(monkeypatch):
+    import http.client
+
+    class Opener:
+        def open(self, *a, **k):
+            raise http.client.BadStatusLine("POST /razer/chromasdk HTTP/1.1")
+
+    monkeypatch.setattr(L.urllib.request, "build_opener", lambda *a: Opener())
+    import pytest
+    with pytest.raises(OSError):
+        L.urllib_http("POST", "http://localhost:54235/razer/chromasdk", {})
+
+
 def test_chroma_flash_then_back_to_what_was_shown():
     chroma, http, clock = make_chroma()
     chroma.static((0, 0, 255), devices=("keyboard",))

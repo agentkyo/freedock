@@ -27,6 +27,7 @@ https://github.com/agentkyo/ambibox-led-ambilight (MIT, same author); see its do
 from __future__ import annotations
 
 import ctypes
+import http.client
 import json
 import logging
 import os
@@ -359,15 +360,17 @@ class _Worker:
             with self._cond:
                 if self._stopping:
                     return
+            failed = False
             try:
                 wait = self._tick(self.clock())
             except Exception:
                 log.exception("%s worker", self.name)
-                wait = 1.0
+                wait, failed = 1.0, True
             with self._cond:
                 if self._stopping:
                     return
-                if wait > 0 and not self._has_work():
+                # after a failure always pause: retrying at once would spin a core
+                if wait > 0 and (failed or not self._has_work()):
                     self._cond.wait(min(wait, 5.0))
 
     def _has_work(self) -> bool:
@@ -701,7 +704,8 @@ def urllib_http(method: str, url: str, body: dict | None = None, timeout: float 
     try:
         with opener.open(request, timeout=timeout) as response:
             text = response.read().decode("utf-8", "replace")
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, http.client.HTTPException) as exc:
+        # HTTPException covers servers that answer garbage (BadStatusLine), seen with Synapse
         raise OSError(str(exc)) from exc
     try:
         reply = json.loads(text) if text.strip() else None
@@ -821,7 +825,10 @@ class ChromaClient(_Worker):
             self.session = None
 
     def _has_work(self) -> bool:
-        return self._release or (bool(self._pending) and self.clock() - self._last_send >= self.interval)
+        # pending colours only count once there is a session; until Synapse answers, the retry
+        # timer decides when to try again (otherwise this loop busy-waits for the whole retry delay)
+        return self._release or (bool(self._pending) and self.session is not None
+                                 and self.clock() - self._last_send >= self.interval)
 
     # -- worker
 
