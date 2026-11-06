@@ -1,0 +1,65 @@
+name: Windows build
+
+# Every push to main refreshes the "nightly" pre-release with a fresh FreeDock.exe.
+# Pushing a tag like v0.2.0 publishes a proper release with the same build.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[dev]" pyinstaller
+      - run: pytest -q
+      - name: Build FreeDock.exe
+        run: python packaging/windows/build_exe.py
+      - name: Smoke test (the frozen app must start and answer)
+        shell: pwsh
+        run: |
+          $env:FREEDOCK_NO_SUPERVISOR = "1"
+          $p = Start-Process dist\FreeDock\FreeDock.exe -ArgumentList "--minimized" -PassThru
+          Start-Sleep 15
+          if ($p.HasExited) { throw "FreeDock.exe exited early with code $($p.ExitCode)" }
+          Start-Process dist\FreeDock\FreeDock.exe -ArgumentList "quit" -Wait
+          if (-not $p.WaitForExit(15000)) { $p.Kill(); throw "FreeDock.exe did not quit" }
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\FreeDock -DestinationPath FreeDock-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreeDock-windows-x64
+          path: FreeDock-windows-x64.zip
+      - name: Publish nightly pre-release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly FreeDock-windows-x64.zip --prerelease --target "$GITHUB_SHA" \
+            --title "Nightly build ($(git rev-parse --short HEAD))" \
+            --notes "Latest build of main ($GITHUB_SHA). Unzip anywhere and run FreeDock.exe. Not code-signed: SmartScreen warns on first launch, and Smart App Control blocks it."
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" FreeDock-windows-x64.zip --generate-notes --title "FreeDock $GITHUB_REF_NAME"
