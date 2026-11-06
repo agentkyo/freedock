@@ -32,11 +32,14 @@ def test_hold_any_key_opens_menu_on_every_page():
     e = _engine()
     for page in e.visible_pages():
         e.goto(page.id)
-        e._on_input(InputEvent(Kind.KEY, 0, EventType.DOWN))
+        # keys with their own hold action (sound keys: hold = headset) keep it; any other key opens the menu
+        k = next((i for i, s in enumerate(page.keys) if not e._long_action(s)), None)
+        assert k is not None, f"{page.id}: no key left to hold for the page menu"
+        e._on_input(InputEvent(Kind.KEY, k, EventType.DOWN))
         _pump(MENU_HOLD_S + 0.3)
         assert e._menu is not None, page.id
         # releasing the key that opened the menu must not pick anything
-        e._on_input(InputEvent(Kind.KEY, 0, EventType.UP))
+        e._on_input(InputEvent(Kind.KEY, k, EventType.UP))
         assert e._menu is not None and e.page.id == page.id
         e._on_input(InputEvent(Kind.ZONE, 0, EventType.TAP))     # "Back"
         assert e._menu is None

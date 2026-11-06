@@ -89,7 +89,7 @@ def test_old_profiles_get_new_pages_once():
     prof = Profile.from_dict(data)
     assert add_new_presets(prof, "pt") is True
     ids = [p.id for p in prof.pages]
-    assert ids[-3:] == ["ai", "ets2", "beamng"]
+    assert ids[-4:] == ["ai", "ets2", "beamng", "sounds"]
     assert "rgb_shift_lights" in prof.page("assetto").effects
     assert any(r["process"] == "eurotrucks2.exe" for r in prof.auto_switch)
     # a page the user deleted later is not brought back
@@ -130,6 +130,10 @@ def test_http_bridge_refuses_web_pages():
         with pytest.raises(urllib.error.HTTPError) as err:
             urllib.request.urlopen(req, timeout=3)
         assert err.value.code == 403 and len(eng.events) == 1
+        eng.sound_play = lambda sid, target: eng.events.append(("sound", sid, target))
+        with urllib.request.urlopen("http://127.0.0.1:47899/sound?id=airhorn&target=local", timeout=3) as r:
+            assert json.load(r)["ok"] is True
+        assert eng.events[-1] == ("sound", "airhorn", "local")
     finally:
         bridge.stop()
 

@@ -13,3 +13,17 @@ Not bundled, used when present: the [scs-sdk-plugin](https://github.com/RenCloud
 
 MiraBox, StreamDock, Assetto Corsa, Microsoft Flight Simulator, Euro Truck Simulator, American Truck Simulator, BeamNG.drive, Razer Chroma, Claude, Codex and OpenCode are trademarks of their owners.
 FreeDock is an independent project and is not affiliated with any of them.
+
+## Soundboard
+
+| Component | License | How it is used |
+|---|---|---|
+| [NumPy](https://numpy.org) | BSD-3-Clause | mixing audio buffers (bundled) |
+| [python-sounddevice](https://github.com/spatialaudio/python-sounddevice) | MIT | audio streams (bundled) |
+| [PortAudio](https://www.portaudio.com) | MIT | audio I/O library behind sounddevice (bundled DLL) |
+| Qt Multimedia + FFmpeg (part of PySide6) | LGPLv3 | decoding MP3/M4A/Opus/OGG/FLAC (bundled with PySide6) |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Unlicense | **not bundled**: downloaded from its official GitHub release on first use, checksum-verified |
+
+The built-in sounds are synthesised by FreeDock's own code (`soundboard/synth.py`) and are MIT
+licensed like the rest of the project.
+

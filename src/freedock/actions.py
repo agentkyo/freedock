@@ -107,10 +107,33 @@ def _volume(engine, a):
     engine.poke_audio()
 
 
-@action("mic", "media", "mic", Field("op", "choice", "toggle", (("toggle", "mic.toggle"),)))
+@action("mic", "media", "mic", Field("op", "choice", "toggle", (
+        ("toggle", "mic.toggle"), ("up", "mic.up"), ("down", "mic.down"))), Field("step", "int", 4))
 def _mic(engine, a):
-    osb.toggle_mic()
+    op = a.get("op", "toggle")
+    if op in ("up", "down"):
+        step = int(a.get("step", 4)) / 100
+        osb.change_mic_volume(step if op == "up" else -step)
+    else:
+        osb.toggle_mic()
     engine.poke_audio()
+
+
+# --------------------------------------------------------------------------- soundboard
+SOUND_TARGETS = (("mic", "sound.mic"), ("local", "sound.local"), ("both", "sound.both"))
+
+
+@action("sound", "sound", "audio-lines", Field("sound", "sound", ""), Field("target", "choice", "mic", SOUND_TARGETS),
+        Field("hold", "choice", "local", (*SOUND_TARGETS, ("none", "sound.none"))))
+def _sound(engine, a):
+    engine.sound_play(a.get("sound"), a.get("target", "mic"))
+
+
+@action("soundboard", "sound", "sliders-vertical", Field("op", "choice", "stop", (
+        ("stop", "sb.stop"), ("up", "sb.up"), ("down", "sb.down"), ("monitor", "sb.monitor"),
+        ("passthrough", "sb.passthrough"))), Field("step", "int", 5))
+def _soundboard(engine, a):
+    engine.soundboard_op(a.get("op", "stop"), int(a.get("step", 5)))
 
 
 # --------------------------------------------------------------------------- deck
@@ -318,6 +341,13 @@ def describe(a: dict | None) -> str:
         return "SIM: " + a.get("event", "")
     if t in ("ets2_binding", "beamng_binding"):
         return ("ETS2: " if t == "ets2_binding" else "BeamNG: ") + a.get("binding", "")
+    if t == "sound":
+        try:
+            from .soundboard.library import display_name, library
+            snd = library().get(a.get("sound"))
+        except Exception:  # noqa: BLE001 - audio stack missing
+            snd = None
+        return "♪ " + (display_name(snd) if snd else str(a.get("sound") or "?"))
     if t in ("open", "launch", "command"):
         return tr(f"action.{t}") + ": " + str(a.get("target") or a.get("path") or a.get("command") or "")
     return tr(f"action.{t}")

@@ -1,6 +1,8 @@
 """The profile FreeDock ships with: Daily, Windows, Assetto Corsa and Flight Simulator pages."""
 from __future__ import annotations
 
+from PySide6.QtGui import QColor
+
 from .profile import Knob, Page, Profile, Slot
 
 L = {
@@ -324,6 +326,9 @@ L.update({
     "ets2": {"en": "Euro Truck", "pt": "Euro Truck", "es": "Euro Truck"},
     "beamng": {"en": "BeamNG.drive", "pt": "BeamNG.drive", "es": "BeamNG.drive"},
     "ai": {"en": "AI assistants", "pt": "Assistentes de IA", "es": "Asistentes de IA"},
+    "sounds": {"en": "Sounds & DJ", "pt": "Sons & DJ", "es": "Sonidos y DJ"},
+    "stop_all": {"en": "Stop all", "pt": "Parar tudo", "es": "Parar todo"},
+    "hear_too": {"en": "Hear it too", "pt": "Ouvir junto", "es": "Oir tambien"},
     "engine": {"en": "Engine", "pt": "Motor", "es": "Motor"},
     "parking": {"en": "Park brake", "pt": "Freio mão", "es": "Freno mano"},
     "camera": {"en": "Camera", "pt": "Câmera", "es": "Cámara"},
@@ -477,6 +482,39 @@ def ai_page(lang: str) -> Page:
     return p
 
 
-NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "beamng": beamng})
+def sounds_page(lang: str) -> Page:
+    """Soundboard: tap = into the microphone (friends hear it), hold = headset only."""
+    from .soundboard.synth import BUILTINS
+    p = Page(id="sounds", name=_t(lang, "sounds"), icon="audio-lines", accent="#22c55e")
+    keys = []
+    for sid, (_names, _icon, color, _build) in BUILTINS.items():
+        bg = QColor(color).darker(520).name()
+        keys.append(Slot(action={"type": "sound", "sound": sid, "target": "mic", "hold": "local"},
+                         style=st(bg, "#07090d", color)))
+    keys.append(Slot(label=_t(lang, "stop_all"), icon="circle-stop", action={"type": "soundboard", "op": "stop"},
+                     style=st("#3b0d0d", "#140505", "#ef4444")))
+    keys.append(Slot(label=_t(lang, "hear_too"), icon="headphones", action={"type": "soundboard", "op": "monitor"},
+                     style=st("#0c2340", "#060f1c", "#3b82f6")))
+    p.keys = keys
+    p.zones = [
+        Slot(widget=w("volume"), style=st("#14213d", "#0a1020")),
+        Slot(widget=w("mic_level"), style=st("#0f2a1d", "#07130d", "#22c55e")),
+        Slot(widget=w("soundboard"), style=st("#2a1240", "#12081c", "#c084fc")),
+        Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
+    ]
+    p.knobs = [
+        Knob(left={"type": "volume", "op": "down", "step": 2}, right={"type": "volume", "op": "up", "step": 2},
+             press={"type": "volume", "op": "mute"}),
+        Knob(left={"type": "mic", "op": "down", "step": 2}, right={"type": "mic", "op": "up", "step": 2},
+             press={"type": "mic", "op": "toggle"}),
+        Knob(left={"type": "soundboard", "op": "down", "step": 5}, right={"type": "soundboard", "op": "up", "step": 5},
+             press={"type": "soundboard", "op": "stop"}),
+        Knob(left={"type": "media", "op": "prevtrack"}, right={"type": "media", "op": "nexttrack"},
+             press={"type": "media", "op": "playpause"}),
+    ]
+    return p
+
+
+NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "beamng": beamng, "sounds": sounds_page})
 NEW_RULES = [{"process": "eurotrucks2.exe", "page": "ets2"}, {"process": "amtrucks.exe", "page": "ets2"},
              {"process": "BeamNG.drive.x64.exe", "page": "beamng"}]

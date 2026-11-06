@@ -176,6 +176,61 @@ def _mic(e, s, c, v):
                    label=tr("widget.mic.muted") if muted else tr("widget.mic.live"))
 
 
+@widget("mic_level", "media", "mic-vocal", press={"type": "mic", "op": "toggle"})
+def _mic_level(e, s, c, v):
+    level, muted = e.audio.get("mic_level"), e.audio.get("mic_muted")
+    if level is None:
+        return v.with_(icon="mic", label=v.label or "Mic")
+    return v.with_(icon="mic-off" if muted else (v.icon or "mic-vocal"), value=f"{level * 100:.0f}%",
+                   progress=level, progress_style="bar", active=bool(muted),
+                   accent="#ef4444" if muted else (v.accent or "#22c55e"), anim="pulse" if muted else None,
+                   sub=tr("widget.mic.muted") if muted else (v.label or tr("widget.mic_level.label")), label="")
+
+
+SOUND_LIVE = "#22c55e"      # playing into the microphone: friends hear it
+SOUND_LOCAL = "#3b82f6"     # playing on the headset only
+
+
+from .soundboard.library import display_name  # noqa: E402
+
+
+@widget("sound", "sound", "audio-lines", Field("sound", "sound", ""))
+def _sound(e, s, c, v):
+    slot = e._slot(s)
+    sid = c.get("sound") or (slot.action or {}).get("sound")
+    snd = e.sound_library().get(sid) if sid else None
+    if snd is None:
+        return v.with_(icon=v.icon or "circle-plus", label=v.label or tr("widget.sound.pick"), fg="#8b93a7")
+    base = v.with_(icon=v.icon or snd.icon, label=v.label or display_name(snd), accent=snd.color or v.accent)
+    playing = e.sound_playing().get(sid)
+    if playing:
+        bus, prog = playing
+        live = bus == "mic"
+        return base.with_(active=True, accent=SOUND_LIVE if live else SOUND_LOCAL, progress=prog,
+                          progress_style="bar", anim="pulse",
+                          sub=tr("widget.sound.live") if live else tr("widget.sound.local"))
+    return base.with_(sub=f"{snd.duration:.1f}s")
+
+
+@widget("soundboard", "sound", "sliders-vertical", press={"type": "soundboard", "op": "stop"})
+def _soundboard(e, s, c, v):
+    m = e._mixer
+    if m is None:
+        return v.with_(icon="sliders-vertical", label=v.label or tr("widget.soundboard"))
+    playing = e.sound_playing()
+    vol = float(m.cfg.get("volume", 0.8))
+    if playing:
+        sid, (bus, prog) = next(iter(playing.items()))
+        snd = e.sound_library().get(sid)
+        return v.with_(icon="audio-lines", value=(display_name(snd) if snd else sid)[:14], progress=prog,
+                       progress_style="bar", active=True, accent=SOUND_LIVE if bus == "mic" else SOUND_LOCAL,
+                       sub=tr("widget.sound.live") if bus == "mic" else tr("widget.sound.local"), label="")
+    ok = m.has_cable()
+    return v.with_(icon=v.icon or "sliders-vertical", value=f"{vol * 100:.0f}%", progress=min(1.0, vol),
+                   progress_style="bar", accent=v.accent if ok else "#f59e0b",
+                   sub=tr("widget.soundboard.ready") if ok else tr("widget.soundboard.no_cable"), label="")
+
+
 @widget("page_name", "deck", "layers")
 def _page_name(e, s, c, v):
     pages = e.visible_pages()

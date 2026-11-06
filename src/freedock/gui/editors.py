@@ -306,6 +306,10 @@ class FieldForm(QWidget):
                 i = w.count() - 1
             w.setCurrentIndex(max(0, i))
             w.currentIndexChanged.connect(lambda _, w=w, n=n: self._set(n, w.currentData()))
+        elif f.kind == "sound":
+            from .sounds import SoundPicker
+            w = SoundPicker(str(value or ""))
+            w.changed.connect(lambda v, n=n: self._set(n, v))
         elif f.kind == "color":
             w = ColorButton(value or None)
             w.changed.connect(lambda c, n=n: self._set(n, c))
@@ -331,7 +335,9 @@ class ActionEditor(QWidget):
         self.combo = QComboBox()
         if allow_none:
             self.combo.addItem(tr("action.none"), None)
-        for cat in ("system", "media", "deck", "web", "games"):
+        cats = ["system", "media", "sound", "deck", "web", "games", "ai", "lights"]
+        cats += sorted({t.category for t in act.REGISTRY.values()} - set(cats))
+        for cat in cats:
             for t in act.REGISTRY.values():
                 if t.category == cat:
                     self.combo.addItem(QIcon(QPixmap.fromImage(icon_image(t.icon, "#e6e9f0", 18))),
@@ -458,7 +464,9 @@ class WidgetEditor(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         self.combo = QComboBox()
         self.combo.addItem(tr("widget.none"), None)
-        for cat in ("time", "system", "media", "deck", "web", "games"):
+        cats = ["time", "system", "media", "sound", "deck", "web", "games", "ai"]
+        cats += sorted({w.category for w in WIDGETS.values()} - set(cats))
+        for cat in cats:
             for w in WIDGETS.values():
                 if w.category == cat:
                     self.combo.addItem(QIcon(QPixmap.fromImage(icon_image(w.icon, "#e6e9f0", 18))),

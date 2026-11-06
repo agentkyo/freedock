@@ -188,6 +188,37 @@ def cmd_statusline(args) -> int:
     return 0
 
 
+def cmd_sound(args) -> int:
+    """Manage the soundboard library: add a link/file, list, remove."""
+    from PySide6.QtCore import QCoreApplication
+    app = QCoreApplication.instance() or QCoreApplication([])  # noqa: F841 - the decoder needs one
+    from .soundboard.library import library
+    lib = library()
+    if args.op == "list":
+        for s in lib.list():
+            print(f"{s.id:24} {s.duration:6.1f}s  {s.name}" + (f"  <{s.source}>" if s.source and not s.builtin else ""))
+        return 0
+    if args.op == "remove":
+        ok = lib.remove(args.target or "")
+        print("removed" if ok else "no such sound")
+        return 0 if ok else 1
+    target = args.target or ""
+    try:
+        if target.startswith(("http://", "https://")):
+            from .soundboard.ytdl import add_from_url
+
+            def progress(frac, msg):
+                print(f"  {'' if frac is None else f'{frac * 100:3.0f}% '}{msg}", flush=True)
+            snd = add_from_url(lib, target, args.name or "", args.start, args.end, progress=progress)
+        else:
+            snd = lib.add_file(target, args.name or "", args.start, args.end)
+    except Exception as exc:  # noqa: BLE001 - shown to the user
+        print(f"error: {exc}")
+        return 1
+    print(f"added {snd.id}: {snd.name} ({snd.duration:.1f} s)")
+    return 0
+
+
 def cmd_ai(args) -> int:
     """Install or remove the Claude Code / Codex / OpenCode bridges."""
     from .integrations import ai_setup
@@ -429,6 +460,12 @@ def main(argv: list[str] | None = None) -> int:
     ai_p = sub.add_parser("ai", help="install/remove the Claude Code, Codex and OpenCode bridges")
     ai_p.add_argument("op", choices=("install", "remove", "status"))
     ai_p.add_argument("tool", nargs="?", default="all", choices=("all", "claude", "codex", "opencode"))
+    so = sub.add_parser("sound", help="soundboard library: add <link|file>, list, remove <id>")
+    so.add_argument("op", choices=("add", "list", "remove"))
+    so.add_argument("target", nargs="?", help="YouTube/other link or audio file (add), sound id (remove)")
+    so.add_argument("--name", "-n")
+    so.add_argument("--start", "-s", help="e.g. 1:23")
+    so.add_argument("--end", "-e", help="e.g. 1:30")
     sub.add_parser("events", help="print decoded key/knob/touch events")
     pv = sub.add_parser("preview", help="render all pages to PNG files")
     pv.add_argument("--out", default="preview")
@@ -441,7 +478,7 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--lang")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
-    handlers = {"quit": cmd_quit, "notify": cmd_notify, "statusline": cmd_statusline, "ai": cmd_ai, "run": cmd_run, "list": cmd_list, "events": cmd_events, "preview": cmd_preview,
+    handlers = {"quit": cmd_quit, "notify": cmd_notify, "statusline": cmd_statusline, "ai": cmd_ai, "sound": cmd_sound, "run": cmd_run, "list": cmd_list, "events": cmd_events, "preview": cmd_preview,
                 "import-streamdock": cmd_import, "reset-profile": cmd_reset}
     if args.cmd in (None, "gui"):
         return gui_main([])

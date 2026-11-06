@@ -8,8 +8,9 @@ pkgdesc="Open-source driver and editor for the MiraBox N4 StreamDock (no vendor 
 arch=('any')
 url="https://github.com/agentkyo/freedock"
 license=('MIT')
-depends=('python' 'pyside6' 'python-hidapi' 'python-psutil' 'python-evdev' 'hidapi')
+depends=('python' 'pyside6' 'python-hidapi' 'python-psutil' 'python-evdev' 'hidapi' 'python-numpy' 'python-sounddevice' 'portaudio')
 optdepends=('wireplumber: volume and microphone control (wpctl)'
+            'yt-dlp: soundboard sounds from links (otherwise downloaded on first use)'
             'playerctl: media keys fallback'
             'kdotool: focused-window detection on KDE Wayland')
 makedepends=('git' 'python-build' 'python-installer' 'python-setuptools' 'python-wheel')

@@ -40,6 +40,7 @@ the same control on Linux, and adds things the vendor app never had.
 | 🚗 **BeamNG.drive** | Speed, gear with rev bar, fuel, engine temperature, turbo, ESC and lights from BeamNG's built-in OutGauge. Ignition, handbrake, recover, cameras and slow motion use your own key bindings. |
 | 🤖 **AI assistants** | Open Claude Code, Codex or OpenCode with one key. Tiles show when each one is **working, done or waiting for you** (the strip announces it and the lights flash), plus 5-hour and weekly plan usage. One click connects the hooks; any script can notify the deck too (`freedock notify`, or HTTP on 127.0.0.1). |
 | 🌈 **RGB lights** | Shift lights on an Ambibox/SyncLight LED strip and on Razer Chroma keyboards, and a flash when an AI finishes. Works alongside the [Ambibox LED](https://github.com/agentkyo/ambibox-led-ambilight) ambilight app. |
+| 🔊 **Soundboard** | A **Sounds & DJ** page: tap a key and your friends hear the sound **through your microphone** (Discord, games), hold it and only you hear it on your headset. Paste a **YouTube link** (with start/end) or pick any audio file to make a meme key. Knobs for system volume, mic volume, mute and sound volume. 8 original starter sounds included. [Setup →](docs/SOUNDBOARD.md) |
 | 🧭 **Never get lost** | On every page, **hold any key for 1.2 s** to open the page menu. Tap a page, or turn any knob and push to pick one. **Swiping the strip** always changes page, and the page name flashes across the strip so you know where you landed. |
 | 🔁 **Automatic pages** | Open Assetto Corsa or MSFS and the deck switches to its page, then switches back when you quit. Works with any `.exe`. |
 | ⌨️ **Actions** | Hotkeys (recorded by pressing them), type text, open URLs or files, launch apps, commands, media, volume, mic, scroll, multi-actions with delays, webhooks, OBS. |
@@ -61,6 +62,10 @@ the same control on Linux, and adds things the vendor app never had.
 | AI assistants | Euro Truck | BeamNG.drive |
 |---|---|---|
 | ![AI assistants](docs/img/pages/ai.png) | ![Euro Truck](docs/img/pages/ets2.png) | ![BeamNG.drive](docs/img/pages/beamng.png) |
+
+| Sounds & DJ |
+|---|
+| ![Sounds & DJ](docs/img/pages/sounds.png) |
 
 <sub>These previews were rendered with `freedock preview --demo`, which feeds simulated game data.</sub>
 
@@ -118,6 +123,8 @@ freedock events                print every key / knob / touch event
 freedock preview --out dir     render all pages to PNG
 freedock import-streamdock     import pages from the vendor app
 freedock reset-profile         back up and restore the default pages
+freedock sound add <link|file> add a soundboard sound (--name, --start 1:23, --end 1:30)
+freedock sound list / remove   list or delete sounds
 --demo                         fake Assetto Corsa / MSFS data (any command)
 ```
 

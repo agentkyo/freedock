@@ -215,6 +215,13 @@ class SettingsDialog(QDialog):
         self.notify_form = f4
         tabs.addTab(notif, tr("ui.notifications"))
 
+        from .sounds import SoundboardTab
+        self.sound_tab = SoundboardTab(win)
+        sscroll = QScrollArea()
+        sscroll.setWidgetResizable(True)
+        sscroll.setWidget(self.sound_tab)
+        tabs.addTab(sscroll, tr("ui.sounds"))
+
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -310,6 +317,7 @@ class SettingsDialog(QDialog):
                     "http_port": self.n_port.value()}
         s.lighting = {**(s.lighting or {}), "strip": self.l_strip.isChecked(), "strip_count": self.l_count.value(),
                       "chroma": self.l_chroma.isChecked()}
+        self.sound_tab.apply()
         s.save()
         prof.animations = self.anim.isChecked()
         prof.idle_minutes = self.idle.value()

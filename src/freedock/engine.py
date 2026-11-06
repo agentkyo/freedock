@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import queue
 import sys
 import threading
@@ -154,6 +155,8 @@ class Engine(QObject):
         self._last_input = time.monotonic()
         self._screensaver = False
         self._asleep = False
+        self._mixer = None                       # soundboard, created when a page uses sounds
+        self._no_cable_told = False
         self.audio: dict = {"level": None, "muted": None, "mic_muted": None}
         self._audio_poke = threading.Event()
         self._started: set[str] = set()
@@ -187,6 +190,13 @@ class Engine(QObject):
 
     def stop(self) -> None:
         self._http.stop()
+        if self._mixer is not None:
+            try:
+                self.settings.soundboard["volume"] = self._mixer.cfg.get("volume", 0.8)
+                self.settings.save()
+                self._mixer.stop()
+            except Exception:  # noqa: BLE001
+                log.exception("soundboard shutdown")
         if "lights" in self._started:
             try:
                 from .integrations.lighting import lights
@@ -234,7 +244,7 @@ class Engine(QObject):
             try:
                 level, muted = osb.volume()
                 mic = osb.mic_state()
-                self.audio = {"level": level, "muted": muted, "mic_muted": mic}
+                self.audio = {"level": level, "muted": muted, "mic_muted": mic, "mic_level": osb.mic_level()}
             except Exception:  # noqa: BLE001
                 log.debug("audio poll failed", exc_info=True)
             self._audio_poke.wait(0.6)
@@ -290,7 +300,7 @@ class Engine(QObject):
             fx = self._fx[ref.key]
             if ev.type == EventType.DOWN:
                 fx.press_target, fx.down_at, fx.long_fired = 1.0, now, False
-                if self._slot(ref).long_action:
+                if self._long_action(self._slot(ref)):
                     QTimer.singleShot(int(LONG_PRESS_S * 1000), lambda r=ref, t=now: self._long_press(r, t))
                 QTimer.singleShot(int(MENU_HOLD_S * 1000), lambda r=ref, t=now: self._menu_hold(r, t))
             elif ev.type == EventType.UP:
@@ -415,7 +425,17 @@ class Engine(QObject):
         if fx.press_target > 0 and fx.down_at == t:
             fx.long_fired = True
             fx.flash_t0 = time.monotonic()
-            self._run(self._slot(ref).long_action)
+            self._run(self._long_action(self._slot(ref)))
+
+    @staticmethod
+    def _long_action(slot: Slot) -> dict | None:
+        """The slot's hold action; a sound key holds to play the same sound elsewhere (default: headset)."""
+        if slot.long_action:
+            return slot.long_action
+        a = slot.action or {}
+        if a.get("type") == "sound" and a.get("sound") and a.get("hold", "local") != "none":
+            return {"type": "sound", "sound": a["sound"], "target": a.get("hold", "local")}
+        return None
 
     def notify_missing_binding(self, binding: str) -> None:
         self.call_in_ui(lambda: self.toast.emit(tr("ui.missing_binding", name=binding)))
@@ -521,6 +541,66 @@ class Engine(QObject):
         from .integrations.system_stats import weather
         return weather.poll(self.settings.weather.get("lat"), self.settings.weather.get("lon"))
 
+    # ------------------------------------------------------------------ soundboard
+    def sound_library(self):
+        from .soundboard.library import library
+        return library()
+
+    def _start_soundboard(self) -> None:
+        try:
+            lib = self.sound_library()
+            lib.ensure_builtins(self.settings.language or "en")
+            self.soundboard()
+        except Exception:  # noqa: BLE001 - missing audio stack must not take the deck down
+            log.exception("soundboard start failed")
+
+    def soundboard(self):
+        if self._mixer is None and os.environ.get("FREEDOCK_NO_AUDIO"):
+            from .soundboard.mixer import NullMixer
+            self._mixer = NullMixer(self.sound_library())
+        if self._mixer is None:
+            from .soundboard.mixer import Mixer
+            self._mixer = Mixer(self.sound_library(), dict(self.settings.soundboard))
+            self._mixer.start()
+        return self._mixer
+
+    def sound_playing(self) -> dict:
+        return self._mixer.playing() if self._mixer is not None else {}
+
+    def sound_play(self, sid: str | None, target: str = "mic") -> None:
+        if not sid:
+            return
+        try:
+            result = self.soundboard().play(sid, target)
+        except Exception:  # noqa: BLE001
+            log.exception("sound %s", sid)
+            self.toast.emit(tr("sound.toast.failed"))
+            return
+        if result == "missing":
+            self.toast.emit(tr("sound.toast.missing"))
+        elif result == "no_cable" and not self._no_cable_told:
+            self._no_cable_told = True
+            self.toast.emit(tr("sound.toast.no_cable"))
+
+    def soundboard_op(self, op: str, step: int = 5) -> None:
+        m = self.soundboard()
+        if op == "stop":
+            m.stop_all()
+        elif op in ("up", "down"):
+            v = m.change_volume((step if op == "up" else -step) / 100)
+            self.settings.soundboard["volume"] = round(v, 3)
+            self.toast.emit(tr("sound.toast.volume", pct=f"{v * 100:.0f}"))
+        elif op == "monitor":
+            on = not m.cfg.get("monitor")
+            m.set("monitor", on)
+            self.settings.soundboard["monitor"] = on
+            self.toast.emit(tr("sound.toast.monitor_on" if on else "sound.toast.monitor_off"))
+        elif op == "passthrough":
+            on = not m.cfg.get("passthrough", True)
+            self.settings.soundboard["passthrough"] = on
+            m.restart({"passthrough": on})
+            self.toast.emit(tr("sound.toast.pass_on" if on else "sound.toast.pass_off"))
+
     def ai_usage(self) -> dict:
         from .integrations import ai
         return getattr(ai, "usage", None).data if hasattr(ai, "usage") else {}
@@ -608,6 +688,8 @@ class Engine(QObject):
                         needs.add("msfs")
                     if a and a.get("type") == "lights":
                         needs.add("lights")
+                    if a and a.get("type") in ("sound", "soundboard"):
+                        needs.add("sound")
             if "ac_shift_lights" in page.effects:
                 needs.add("assetto")
             if "rgb_shift_lights" in page.effects:
@@ -630,6 +712,9 @@ class Engine(QObject):
                 importlib.import_module(f".integrations.{game}", __package__).telemetry.start()
         if "lights" in needs and "lights" not in self._started:
             self._start_lights()
+        if "sound" in needs and "sound" not in self._started and not os.environ.get("FREEDOCK_NO_AUDIO"):
+            self._started.add("sound")
+            threading.Thread(target=self._start_soundboard, name="soundboard-init", daemon=True).start()
         if "ai" in needs and "ai" not in self._started:
             try:
                 from .integrations.ai import usage
@@ -678,9 +763,10 @@ class Engine(QObject):
             kw = looks.visual_kwargs(st)
             kw.setdefault("accent", self.page.accent)
             v = Visual(icon=slot.icon, label=slot.label, image=slot.image, **kw)
-        if slot.widget and (w := WIDGETS.get(slot.widget.get("type"))):
+        wcfg = slot.widget or ({"type": "sound"} if (slot.action or {}).get("type") == "sound" else None)
+        if wcfg and (w := WIDGETS.get(wcfg.get("type"))):
             try:
-                v = w.fn(self, ref, slot.widget, v)
+                v = w.fn(self, ref, wcfg, v)
             except Exception:  # noqa: BLE001 - a broken widget shows an error tile, never crashes
                 log.exception("widget %s failed", slot.widget.get("type"))
                 v = v.with_(icon="triangle-alert", label="widget", accent="#ef4444", active=True)

@@ -239,6 +239,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from locales_v02 import EXTRA  # noqa: E402
 T.update(EXTRA)
+from locales_v03 import EXTRA3  # noqa: E402
+T.update(EXTRA3)
 
 out_dir = Path(__file__).resolve().parent.parent / "src" / "freedock" / "locales"
 out_dir.mkdir(parents=True, exist_ok=True)

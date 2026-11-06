@@ -40,6 +40,7 @@ dá o mesmo controle no Linux e traz o que o app oficial nunca teve.
 | 🚗 **BeamNG.drive** | Velocidade, marcha com barra de giro, combustível, temperatura do motor, turbo, ESC e faróis pelo OutGauge que já vem no BeamNG. Ignição, freio de mão, recuperar, câmeras e câmera lenta usam os seus binds. |
 | 🤖 **Assistentes de IA** | Abra o Claude Code, o Codex ou o OpenCode com uma tecla. As teclas mostram quando cada um está **trabalhando, terminou ou espera por você** (a faixa anuncia e as luzes piscam), e o uso do plano em 5 horas e na semana. Um clique conecta os ganchos; qualquer script também pode avisar o deck (`freedock notify` ou HTTP em 127.0.0.1). |
 | 🌈 **Luzes RGB** | Shift lights na fita LED Ambibox/SyncLight e em teclados Razer Chroma, e um flash quando uma IA termina. Funciona junto com o app de ambilight [Ambibox LED](https://github.com/agentkyo/ambibox-led-ambilight). |
+| 🔊 **Mesa de som** | Uma página **Sons & DJ**: toque numa tecla e seus amigos ouvem o som **pelo seu microfone** (Discord, jogos); segure e só você ouve, no fone. Cole um **link do YouTube** (com início/fim) ou escolha qualquer arquivo de áudio para criar uma tecla de meme. Knobs de volume do sistema, volume do mic, mudo e volume dos sons. Vem com 8 sons originais. [Como configurar →](docs/SOUNDBOARD.md) |
 | 🧭 **Você nunca se perde** | Em qualquer página, **segure uma tecla por 1,2 s** para abrir o menu de páginas. Toque na página que quer, ou gire qualquer knob e aperte para escolher. **Deslizar na faixa** sempre troca de página, e o nome da página aparece na faixa para você saber onde está. |
 | 🔁 **Páginas automáticas** | Abriu o Assetto Corsa ou o MSFS, o deck pula para a página dele. Fechou, ele volta. Funciona com qualquer `.exe`. |
 | ⌨️ **Ações** | Atalhos (gravados apertando as teclas), digitar texto, abrir sites ou arquivos, abrir programas, comandos, mídia, volume, microfone, rolagem, multiações com intervalo, webhooks, OBS. |
@@ -61,6 +62,10 @@ dá o mesmo controle no Linux e traz o que o app oficial nunca teve.
 | Assistentes de IA | Euro Truck | BeamNG.drive |
 |---|---|---|
 | ![Assistentes de IA](docs/img/pages/ai.png) | ![Euro Truck](docs/img/pages/ets2.png) | ![BeamNG.drive](docs/img/pages/beamng.png) |
+
+| Sons & DJ |
+|---|
+| ![Sons & DJ](docs/img/pages/sounds.png) |
 
 <sub>Prévias geradas com `freedock preview --demo`, que alimenta dados simulados dos jogos. O app mostra os textos no seu idioma.</sub>
 
@@ -118,6 +123,8 @@ freedock events                mostra cada tecla / knob / toque recebido
 freedock preview --out pasta   renderiza todas as páginas em PNG
 freedock import-streamdock     importa páginas do app oficial
 freedock reset-profile         faz backup e restaura as páginas padrão
+freedock sound add <link|arq>  adiciona um som (--name, --start 1:23, --end 1:30)
+freedock sound list / remove   lista ou exclui sons
 --demo                         dados simulados de Assetto Corsa / MSFS (em qualquer comando)
 ```
 

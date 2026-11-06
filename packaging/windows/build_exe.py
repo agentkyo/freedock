@@ -47,9 +47,12 @@ def main() -> int:
            "--add-data", f"{src / 'assets'}{sep}freedock/assets",
            "--add-data", f"{src / 'locales'}{sep}freedock/locales",
            "--hidden-import", "comtypes.stream",
+           # soundboard: PortAudio DLL + Qt Multimedia (its bundled FFmpeg decodes MP3/M4A/Opus)
+           "--collect-all", "_sounddevice_data",
+           "--hidden-import", "PySide6.QtMultimedia",
            # Qt modules FreeDock never touches: ~150 MB less
            *[a for m in ("QtWebEngineCore", "QtWebEngineWidgets", "Qt3DCore", "QtQuick", "QtQml",
-                         "QtMultimedia", "QtCharts", "QtDataVisualization", "QtPdf", "QtSql", "QtTest")
+                         "QtCharts", "QtDataVisualization", "QtPdf", "QtSql", "QtTest")
              for a in ("--exclude-module", f"PySide6.{m}")],
            str(entry)]
     shutil.rmtree(ROOT / "dist" / "FreeDock", ignore_errors=True)

@@ -18,9 +18,9 @@ PYV=$(python3 -c 'import sys; print(sys.version_info >= (3, 11))')
 
 if command -v pacman >/dev/null; then
     say "Arch/CachyOS detected - installing system libraries (hidapi, libusb)"
-    sudo pacman -S --needed --noconfirm hidapi libusb python-pip >/dev/null || true
+    sudo pacman -S --needed --noconfirm hidapi libusb python-pip portaudio >/dev/null || true
 elif command -v apt-get >/dev/null; then
-    sudo apt-get install -y libhidapi-hidraw0 libusb-1.0-0 python3-venv >/dev/null || true
+    sudo apt-get install -y libhidapi-hidraw0 libusb-1.0-0 libportaudio2 python3-venv >/dev/null || true
 elif command -v dnf >/dev/null; then
     sudo dnf install -y hidapi libusb1 >/dev/null || true
 fi

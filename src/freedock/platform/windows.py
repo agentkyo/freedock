@@ -170,7 +170,7 @@ class _AudioThread:
     def __init__(self):
         import queue
         import threading
-        self.state: dict = {"level": None, "muted": None, "mic_muted": None}
+        self.state: dict = {"level": None, "muted": None, "mic_muted": None, "mic_level": None}
         self._q: "queue.Queue" = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="coreaudio", daemon=True)
         self._thread.start()
@@ -198,6 +198,31 @@ class _AudioThread:
             mic = None
         return spk, mic
 
+    @staticmethod
+    def _capture_level(name_part: str, db: float, done=None) -> None:
+        """Set the recording gain (dB) of a capture endpoint found by name.
+
+        Virtual cables ship at odd levels (Steam's at -17 dB, and its range goes up to +30 dB, so
+        "100 %" would be +30 dB and clip): 0 dB passes the audio through unchanged."""
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        found = []
+        for dev in AudioUtilities.GetAllDevices():
+            name = dev.FriendlyName or ""
+            if name_part.lower() not in name.lower() or not (dev.id or "").startswith("{0.0.1."):
+                continue
+            try:
+                raw = getattr(dev, "_dev", dev)
+                ep = raw.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(IAudioEndpointVolume)
+                before = float(ep.GetMasterVolumeLevel())
+                lo, hi, _step = ep.GetVolumeRange()
+                ep.SetMasterVolumeLevel(max(lo, min(hi, db)), None)
+                found.append((name, before))
+            except Exception as exc:  # noqa: BLE001 - endpoint not present right now
+                log.debug("capture level %s: %s", name, exc)
+        if done:
+            done(found)
+
     def _run(self) -> None:
         import queue
         import comtypes
@@ -223,9 +248,14 @@ class _AudioThread:
                     spk.SetMute(0 if spk.GetMute() else 1, None)
                 elif name == "mic" and mic:
                     mic.SetMute(0 if mic.GetMute() else 1, None)
+                elif name == "mic_change" and mic:
+                    mic.SetMasterVolumeLevelScalar(max(0.0, min(1.0, mic.GetMasterVolumeLevelScalar() + args[0])), None)
+                elif name == "capture_level":
+                    self._capture_level(*args)
                 self.state = {"level": float(spk.GetMasterVolumeLevelScalar()) if spk else None,
                               "muted": bool(spk.GetMute()) if spk else None,
-                              "mic_muted": bool(mic.GetMute()) if mic else None}
+                              "mic_muted": bool(mic.GetMute()) if mic else None,
+                              "mic_level": float(mic.GetMasterVolumeLevelScalar()) if mic else None}
             except Exception as exc:  # noqa: BLE001 - device unplugged, COM hiccup...
                 log.debug("coreaudio: %s", exc)
                 spk = mic = None
@@ -266,3 +296,21 @@ def mic_state() -> bool | None:
 
 def toggle_mic() -> None:
     _audio().post("mic")
+
+
+def mic_level() -> float | None:
+    return _audio().state.get("mic_level")
+
+
+def change_mic_volume(step: float) -> None:
+    _audio().post("mic_change", step)
+
+
+def set_capture_level(name_part: str, db: float = 0.0, timeout: float = 5.0) -> list[tuple[str, float]]:
+    """Recording gain in dB (0 = unchanged) of the capture devices whose name contains ``name_part``.
+    Returns [(device name, previous gain in dB)]."""
+    import threading
+    ev, out = threading.Event(), []
+    _audio().post("capture_level", name_part, db, lambda found: (out.extend(found), ev.set()))
+    ev.wait(timeout)
+    return out

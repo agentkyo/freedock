@@ -213,3 +213,19 @@ def toggle_mic() -> None:
         _wpctl("set-mute", SOURCE, "toggle")
     elif shutil.which("pactl"):
         subprocess.run(["pactl", "set-source-mute", "@DEFAULT_SOURCE@", "toggle"])
+
+
+def mic_level() -> float | None:
+    return _get(SOURCE)[0]
+
+
+def change_mic_volume(step: float) -> None:
+    pct = f"{abs(step) * 100:.0f}%{'+' if step > 0 else '-'}"
+    if shutil.which("wpctl"):
+        _wpctl("set-volume", "-l", "1.0", SOURCE, pct)
+    elif shutil.which("pactl"):
+        subprocess.run(["pactl", "set-source-volume", "@DEFAULT_SOURCE@", f"{'+' if step > 0 else '-'}{abs(step) * 100:.0f}%"])
+
+
+def set_capture_level(name_part: str, db: float = 0.0, timeout: float = 5.0) -> list:
+    return []

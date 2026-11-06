@@ -8,6 +8,7 @@ Three ways in, all ending in :meth:`Engine.notify_event`:
 * ``http://127.0.0.1:47810/notify?source=claude&event=done&message=...`` (GET or POST, JSON body
   also accepted) for anything that can make an HTTP request: shell scripts, Home Assistant, CI.
 * ``GET /state`` returns the current state of every source as JSON; ``/quit`` closes FreeDock.
+* ``/sound?id=<sound>&target=mic|local|both`` plays a soundboard sound, ``/sound?stop=1`` stops all.
 
 Only the loopback interface is bound, so nothing is reachable from the network, and requests that a
 browser marks as coming from a web page (``Origin`` / ``Sec-Fetch-Site``) are refused, so a website
@@ -178,8 +179,22 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(200, {"ok": True})
             self.engine.call_in_ui(quit_fn)
             return
+        if url.path == "/sound":
+            # /sound?id=airhorn&target=mic|local|both   /sound?stop=1
+            p = self._params()
+            play = getattr(self.engine, "sound_play", None)
+            if play is None:
+                self._reply(404, {"error": "soundboard not available"})
+                return
+            if p.get("stop"):
+                self.engine.call_in_ui(lambda: self.engine.soundboard_op("stop"))
+            else:
+                sid, target = str(p.get("id") or ""), str(p.get("target") or "mic")
+                self.engine.call_in_ui(lambda: play(sid, target))
+            self._reply(200, {"ok": True})
+            return
         if url.path != "/notify":
-            self._reply(404, {"error": "use /notify or /state"})
+            self._reply(404, {"error": "use /notify, /sound or /state"})
             return
         p = self._params()
         src = str(p.get("source") or p.get("tool") or "custom")[:24]
