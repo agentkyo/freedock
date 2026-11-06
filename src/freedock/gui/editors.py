@@ -290,6 +290,25 @@ class FieldForm(QWidget):
                 i = w.count() - 1
             w.setCurrentIndex(max(0, i))
             w.currentIndexChanged.connect(lambda _, w=w, n=n: self._set(n, w.currentData()))
+        elif f.kind.startswith("game_binding:"):
+            game = f.kind.split(":", 1)[1]
+            engine = getattr(self.context, "engine", None)
+            names = engine.game_actions(game) if engine else {}
+            bindings = engine.game_bindings(game) if engine else {}
+            w = QComboBox()
+            w.setEditable(True)
+            for aid, friendly in names.items():
+                b = bindings.get(aid)
+                w.addItem(f"{friendly}  —  {'+'.join(b.combo) if b else tr('ac.no_key')}", aid)
+            i = w.findData(value)
+            if i < 0 and value:
+                w.addItem(str(value), value)
+                i = w.count() - 1
+            w.setCurrentIndex(max(0, i))
+            w.currentIndexChanged.connect(lambda _, w=w, n=n: self._set(n, w.currentData()))
+        elif f.kind == "color":
+            w = ColorButton(value or None)
+            w.changed.connect(lambda c, n=n: self._set(n, c))
         elif f.kind == "actions":
             w = MultiActionEditor(list(value or []), self.context)
             w.changed.connect(lambda v, n=n: self._set(n, v))
@@ -483,3 +502,131 @@ def section(title: str) -> QLabel:
     lbl = QLabel(title)
     lbl.setObjectName("h2")
     return lbl
+
+
+# --------------------------------------------------------------------------- looks
+STYLE_GROUPS = (
+    ("style.group.colors", ("bg", "bg2", "grad", "accent", "accent_lock", "fg", "icon_color")),
+    ("style.group.text", ("font", "font_value", "font_scale", "bold")),
+    ("style.group.shape", ("icon_scale", "radius", "border", "sheen")),
+    ("style.group.picture", ("image_fit", "image_dim")),
+    ("style.group.animation", ("anim", "anim_when", "anim_speed", "active_anim", "change")),
+)
+
+
+@lru_cache(maxsize=1)
+def _font_families() -> list[str]:
+    from PySide6.QtGui import QFontDatabase
+    from ..render.painter import load_fonts
+    load_fonts()
+    return sorted(set(QFontDatabase.families()), key=str.lower)
+
+
+class StyleEditor(QWidget):
+    """Edits one style dictionary (theme, page or slot). Empty = inherit from the level above."""
+    changed = Signal()
+
+    def __init__(self, style: dict, groups=STYLE_GROUPS, inherit_label: str | None = None):
+        super().__init__()
+        from PySide6.QtWidgets import QSlider
+        from ..style import BY_KEY
+        self.style = style
+        self._inherit = inherit_label or tr("style.inherit")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        for title, keys in groups:
+            lay.addWidget(section(tr(title)))
+            form = QFormLayout()
+            for key in keys:
+                opt = BY_KEY[key]
+                form.addRow(tr(f"style.{key}"), self._control(opt, QSlider))
+            lay.addLayout(form)
+
+    # ------------------------------------------------------------------ controls
+    def _set(self, key: str, value) -> None:
+        if value in (None, ""):
+            self.style.pop(key, None)
+        else:
+            self.style[key] = value
+        self.changed.emit()
+
+    def _control(self, opt, QSlider) -> QWidget:
+        cur = self.style.get(opt.key)
+        if opt.kind == "color":
+            b = ColorButton(cur, allow_none=True)
+            b.setToolTip(tr("ui.color_hint"))
+            b.changed.connect(lambda c, k=opt.key: self._set(k, c))
+            return b
+        if opt.kind in ("choice", "bool", "font"):
+            combo = QComboBox()
+            combo.addItem(self._inherit, None)
+            if opt.kind == "bool":
+                combo.addItem(tr("ui.yes"), True)
+                combo.addItem(tr("ui.no"), False)
+            elif opt.kind == "font":
+                for fam in _font_families():
+                    combo.addItem(fam, fam)
+            else:
+                for c in opt.choices:
+                    combo.addItem(tr(f"style.{opt.key}.{c}") if not opt.key.endswith("anim") else tr(f"anim.{c}"), c)
+            idx = combo.findData(cur) if cur is not None else 0
+            combo.setCurrentIndex(max(0, idx))
+            combo.currentIndexChanged.connect(lambda _=0, k=opt.key, cb=combo: self._set(k, cb.currentData()))
+            return combo
+        # float: slider + value + reset
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(0, 100)
+        span = opt.hi - opt.lo
+
+        def to_pos(v):
+            return int(round((float(v) - opt.lo) / span * 100))
+
+        slider.setValue(to_pos(cur if cur is not None else opt.default))
+        val = QLabel(f"{float(cur):.2f}" if cur is not None else self._inherit)
+        val.setMinimumWidth(56)
+        reset = QPushButton("↺")
+        reset.setFixedWidth(30)
+        reset.setToolTip(self._inherit)
+
+        def moved(pos, k=opt.key):
+            v = round(opt.lo + span * pos / 100, 2)
+            val.setText(f"{v:.2f}")
+            self._set(k, v)
+
+        def clear(_=False, k=opt.key):
+            slider.blockSignals(True)
+            slider.setValue(to_pos(opt.default))
+            slider.blockSignals(False)
+            val.setText(self._inherit)
+            self._set(k, None)
+
+        slider.valueChanged.connect(moved)
+        reset.clicked.connect(clear)
+        h.addWidget(slider, 1)
+        h.addWidget(val)
+        h.addWidget(reset)
+        return row
+
+
+class StyleDialog(QDialog):
+    """A StyleEditor in its own window (page style, theme preview...)."""
+
+    def __init__(self, parent, title: str, style: dict, on_change):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QScrollArea
+        self.setWindowTitle(title)
+        self.resize(460, 640)
+        lay = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        ed = StyleEditor(style)
+        ed.changed.connect(on_change)
+        scroll.setWidget(ed)
+        lay.addWidget(scroll)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        bb.rejected.connect(self.accept)
+        bb.accepted.connect(self.accept)
+        lay.addWidget(bb)

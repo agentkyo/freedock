@@ -235,6 +235,11 @@ T = {
                            "Assetto Corsa: “{name}” no tiene tecla en controls.ini"),
 }
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from locales_v02 import EXTRA  # noqa: E402
+T.update(EXTRA)
+
 out_dir = Path(__file__).resolve().parent.parent / "src" / "freedock" / "locales"
 out_dir.mkdir(parents=True, exist_ok=True)
 for i, lang in enumerate(("en", "pt", "es")):

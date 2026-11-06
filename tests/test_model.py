@@ -18,7 +18,7 @@ def test_parse_combo():
 def test_default_profile_round_trip():
     for lang in ("en", "pt", "es"):
         prof = build_default_profile(lang)
-        assert [p.id for p in prof.pages] == ["daily", "windows", "assetto", "msfs", "msfs2"]
+        assert [p.id for p in prof.pages] == ["daily", "windows", "assetto", "msfs", "msfs2", "ai", "ets2", "beamng"]
         again = Profile.from_dict(json.loads(json.dumps(prof.to_dict())))
         assert again.to_dict() == prof.to_dict()
         for p in again.pages:
@@ -35,7 +35,7 @@ def test_profile_save_load(tmp_path):
     prof = build_default_profile("pt")
     path = prof.save(tmp_path / "p.json")
     loaded = Profile.load(path)
-    assert loaded.page("assetto").effects == ["ac_shift_lights"]
+    assert loaded.page("assetto").effects == ["ac_shift_lights", "rgb_shift_lights"]
     assert loaded.page("windows").platform == "windows"
 
 

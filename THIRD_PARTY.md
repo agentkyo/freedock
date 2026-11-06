@@ -9,5 +9,7 @@
 Runtime dependencies (installed by pip): PySide6 (LGPL-3.0), hidapi (BSD/GPL dual), psutil (BSD-3),
 pycaw (MIT, Windows), comtypes (MIT, Windows), python-evdev (BSD-3, Linux).
 
-MiraBox, StreamDock, Assetto Corsa and Microsoft Flight Simulator are trademarks of their owners.
+Not bundled, used when present: the [scs-sdk-plugin](https://github.com/RenCloud/scs-sdk-plugin) telemetry plugin for Euro Truck / American Truck Simulator (its shared-memory layout is read, no code is copied), BeamNG.drive's built-in OutGauge, the Razer Chroma SDK REST API and the [Ambibox LED](https://github.com/agentkyo/ambibox-led-ambilight) control channel (MIT, same author; `integrations/lighting.py` carries a small copy of its packet builders).
+
+MiraBox, StreamDock, Assetto Corsa, Microsoft Flight Simulator, Euro Truck Simulator, American Truck Simulator, BeamNG.drive, Razer Chroma, Claude, Codex and OpenCode are trademarks of their owners.
 FreeDock is an independent project and is not affiliated with any of them.

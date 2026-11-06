@@ -30,6 +30,9 @@ class Settings:
     obs: dict[str, Any] = field(default_factory=lambda: {"host": "localhost", "port": 4455, "password": ""})
     assetto_controls: str = ""         # override path to Assetto Corsa cfg/controls.ini
     simconnect_dll: str = ""           # override path to SimConnect.dll
+    notify: dict[str, Any] = field(default_factory=lambda: {"banner": True, "lights": True, "http_port": 47810})
+    ai: dict[str, Any] = field(default_factory=dict)   # claude_statusline_previous...
+    lighting: dict[str, Any] = field(default_factory=lambda: {"strip": True, "strip_count": 71, "chroma": True})
 
     @classmethod
     def load(cls) -> "Settings":

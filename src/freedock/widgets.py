@@ -92,7 +92,7 @@ def _pomodoro(e, s, c, v):
     mm, ss = divmod(int(max(0, left) + 0.999), 60)
     blink = done and int(time.time() * 2) % 2 == 0
     return v.with_(value=f"{mm:02d}:{ss:02d}", mono=True, progress=1 - left / total if t.started else 0.0,
-                   progress_style="bar", active=t.running or blink,
+                   progress_style="bar", active=t.running or blink, anim="alert" if done else None,
                    sub=tr("widget.pomodoro.done") if done else (v.label or "Pomodoro"), label="")
 
 
@@ -151,7 +151,7 @@ def _weather(e, s, c, v):
     if not w:
         return v.with_(icon="cloud-off", label=tr("widget.weather.setup"))
     return v.with_(icon=w["icon"], value=f"{w['temp']:.0f}°", sub=e.settings.weather.get("city") or w["text"],
-                   label="")
+                   label="", anim="float")
 
 
 @widget("volume", "media", "volume-2", press={"type": "volume", "op": "mute"})
@@ -172,6 +172,7 @@ def _mic(e, s, c, v):
     if muted is None:
         return v.with_(icon="mic", label=v.label or "Mic")
     return v.with_(icon="mic-off" if muted else "mic", active=bool(muted), accent="#ef4444" if muted else "#22c55e",
+                   anim="pulse" if muted else None,
                    label=tr("widget.mic.muted") if muted else tr("widget.mic.live"))
 
 
@@ -180,7 +181,7 @@ def _page_name(e, s, c, v):
     pages = e.visible_pages()
     idx = next((i for i, p in enumerate(pages) if p.id == e.page.id), 0)
     dots = "".join("●" if i == idx else "○" for i in range(len(pages)))
-    return v.with_(value=e.page.name, sub=dots, icon=e.page.icon or v.icon, label="")
+    return v.with_(value=e.page.name, sub=dots, icon=e.page.icon or v.icon, label="", anim="shimmer")
 
 
 @widget("obs_state", "web", "video", Field("which", "choice", "record", (
@@ -278,6 +279,213 @@ def _sim_toggle(e, s, c, v):
     on = (sim.get(var, 0) or 0) > 0.5
     text = c.get("on_text") if on else c.get("off_text")
     return v.with_(active=on, label=text or v.label)
+
+
+# --------------------------------------------------------------------------- AI assistants
+AI_SOURCES = (("claude", "ai.claude"), ("codex", "ai.codex"), ("opencode", "ai.opencode"), ("custom", "ai.custom"))
+AI_SHOW = (("status", "ai.show.status"), ("usage_5h", "ai.show.usage_5h"), ("usage_week", "ai.show.usage_week"),
+           ("tokens_today", "ai.show.tokens_today"))
+
+
+def _tokens(n: float | None) -> str:
+    if not n:
+        return "0"
+    for unit, div in (("B", 1e9), ("M", 1e6), ("k", 1e3)):
+        if n >= div:
+            return f"{n / div:.1f}{unit}".replace(".0", "")
+    return f"{n:.0f}"
+
+
+def _until(epoch: float | None) -> str | None:
+    if not epoch:
+        return None
+    left = int(epoch - time.time())
+    if left <= 0:
+        return None
+    h, m = divmod(left // 60, 60)
+    if h >= 24:
+        return f"↻ {h // 24}d {h % 24}h"
+    return f"↻ {h}h{m:02d}" if h else f"↻ {m} min"
+
+
+@widget("ai", "ai", "sparkles", Field("source", "choice", "claude", AI_SOURCES),
+        Field("show", "choice", "status", AI_SHOW), press={"type": "ai", "op": "open"}, needs=("ai",))
+def _ai(e, s, c, v):
+    from .notify import EVENT_COLOR, source as meta_of
+    src = c.get("source", "claude")
+    meta = meta_of(src)
+    show = c.get("show", "status")
+    icon = v.icon or meta.icon
+    if show != "status":
+        u = (e.ai_usage().get(src) or {})
+        if not u.get("installed", True) and not u:
+            return v.with_(dim=0.5, icon=icon, label=v.label or meta.name)
+        if show == "tokens_today":
+            return v.with_(icon=icon, value=_tokens(u.get("tokens_today")), sub=v.label or tr("ai.tokens_today"),
+                           mono=True, label="")
+        pct = u.get("percent_5h" if show == "usage_5h" else "percent_week")
+        if pct is None:
+            # no plan percentage for this tool: show tokens of the window instead
+            tok = u.get("tokens_5h") if show == "usage_5h" else u.get("tokens_week", u.get("tokens_today"))
+            return v.with_(icon=icon, value=_tokens(tok), mono=True, label="",
+                           sub=v.label or tr("ai.tokens_5h" if show == "usage_5h" else "ai.tokens_today"))
+        frac = e.smooth(s, "ai", max(0.0, min(1.0, pct / 100)))
+        return v.with_(icon=icon, value=f"{pct:.0f}%", progress=frac, accent=_load_color(frac), mono=True,
+                       label="", sub=_until(u.get("resets_at" if show == "usage_5h" else "resets_week_at"))
+                       or v.label or tr("ai.show." + show))
+    st = e.notify_center.get(src)
+    name = v.label or meta.name
+    if st.status == "working":
+        return v.with_(icon="loader-circle", value=None, label=tr("ai.working"), anim="spin", accent=meta.color,
+                       progress=st.progress, progress_style="bar", badge=name[:8] if v.label else None)
+    if st.status in ("done", "question", "error"):
+        color = EVENT_COLOR.get(st.status, meta.color)
+        ico = {"done": "circle-check-big", "question": "message-circle-question", "error": "circle-x"}[st.status]
+        return v.with_(icon=ico, label=tr(f"ai.{st.status}"), accent=color, active=st.unseen,
+                       anim="alert" if st.unseen else None, badge="!" if st.unseen else None)
+    return v.with_(icon=icon, label=name, accent=v.accent if v.accent != e.page.accent else meta.color)
+
+
+# --------------------------------------------------------------------------- Euro Truck / American Truck Simulator
+ETS2_METRICS = tuple((m, f"ets2.{m}") for m in (
+    "speed", "gear", "rpm", "cruise", "fuel", "range", "damage", "job", "nav", "rest", "clock", "limit",
+    "parking_brake", "lights_low", "lights_high", "beacon", "hazard", "engine_on", "diff_lock", "lift_axle",
+    "retarder", "trailer_attached", "wipers", "blinker_left", "blinker_right", "adblue"))
+ETS2_STATES = {"parking_brake": "#ef4444", "lights_low": "#22c55e", "lights_high": "#3b82f6", "beacon": "#f59e0b",
+               "hazard": "#f97316", "engine_on": "#22c55e", "diff_lock": "#a855f7", "lift_axle": "#38bdf8",
+               "trailer_attached": "#22c55e", "wipers": "#38bdf8", "blinker_left": "#22c55e",
+               "blinker_right": "#22c55e", "cruise_on": "#22c55e"}
+
+
+def _fmt_min(minutes: float | None) -> str:
+    if minutes is None:
+        return "--"
+    h, m = divmod(int(minutes), 60)
+    return f"{h}h{m:02d}" if h else f"{m} min"
+
+
+@widget("ets2", "games", "truck", Field("metric", "choice", "speed", ETS2_METRICS), needs=("ets2",))
+def _ets2(e, s, c, v):
+    d = e.ets2()
+    m = c.get("metric", "speed")
+    if not d.get("connected"):
+        return v.with_(dim=0.5, value=None, icon=v.icon or "truck", label=v.label or tr(f"ets2.{m}"))
+    if m in ETS2_STATES:
+        key = "blinker_left_lamp" if m == "blinker_left" else "blinker_right_lamp" if m == "blinker_right" else m
+        on = bool(d.get(key))
+        return v.with_(active=on, accent=ETS2_STATES[m] if on else v.accent,
+                       anim="blink" if on and m in ("hazard", "beacon") else None)
+    if m == "speed":
+        lim = d.get("speed_limit_kmh")
+        over = lim and d.get("speed_kmh", 0) > lim + 3
+        return v.with_(value=f"{d.get('speed_kmh', 0):.0f}", sub=f"km/h · {lim:.0f}" if lim else "km/h", mono=True,
+                       label="", accent="#ef4444" if over else v.accent, active=bool(over),
+                       anim="pulse" if over else None)
+    if m == "limit":
+        lim = d.get("speed_limit_kmh")
+        return v.with_(value=f"{lim:.0f}" if lim else "--", sub=tr("ets2.limit"), mono=True, label="",
+                       icon=v.icon or "octagon-alert")
+    if m == "gear":
+        frac = (d.get("rpm") or 0) / max(1, d.get("max_rpm") or 2500)
+        return v.with_(value=str(d.get("gear", "N")), sub=f"{d.get('speed_kmh', 0):.0f} km/h", mono=True, label="",
+                       progress=e.smooth(s, "rpm", frac, 0.5), progress_style="bar", accent=_load_color(frac))
+    if m == "rpm":
+        frac = (d.get("rpm") or 0) / max(1, d.get("max_rpm") or 2500)
+        return v.with_(value=f"{d.get('rpm', 0):.0f}", sub="RPM", mono=True, label="",
+                       progress=e.smooth(s, "rpm", frac, 0.5), accent=_load_color(frac))
+    if m == "cruise":
+        on = bool(d.get("cruise_on"))
+        return v.with_(value=f"{d.get('cruise_kmh') or 0:.0f}" if on else "OFF", sub=tr("ets2.cruise"), mono=True,
+                       label="", active=on, accent="#22c55e" if on else v.accent)
+    if m == "fuel":
+        cap = d.get("fuel_cap_l") or 1
+        frac = (d.get("fuel_l") or 0) / cap
+        return v.with_(value=f"{d.get('fuel_l', 0):.0f} L", sub=tr("ets2.fuel"), mono=True, label="",
+                       progress=frac, progress_style="bar", accent=_load_color(1 - frac),
+                       anim="pulse" if d.get("fuel_warning") else None)
+    if m == "range":
+        return v.with_(value=f"{d.get('fuel_range_km') or 0:.0f}", sub=tr("ets2.range") + " km", mono=True, label="")
+    if m == "adblue":
+        return v.with_(value=f"{d.get('adblue') or 0:.0f} L", sub="AdBlue", mono=True, label="",
+                       anim="pulse" if d.get("adblue_warning") else None)
+    if m == "damage":
+        frac = max(d.get("truck_damage") or 0, 0)
+        return v.with_(value=f"{frac * 100:.0f}%", sub=tr("ets2.damage"), mono=True, label="", progress=frac,
+                       accent=_load_color(frac))
+    if m == "job":
+        job = d.get("job")
+        if not job:
+            return v.with_(icon=v.icon or "package", label=tr("ets2.no_job"), dim=0.2)
+        return v.with_(value=str(job.get("dest_city") or "?")[:14], sub=str(job.get("cargo") or "")[:18], label="",
+                       icon=v.icon or "package")
+    if m == "nav":
+        km = d.get("nav_distance_km")
+        return v.with_(value=f"{km:.0f} km" if km else "--", sub=_fmt_min(d.get("nav_time_min")), mono=True,
+                       label="", icon=v.icon or "navigation")
+    if m == "rest":
+        mins = d.get("rest_stop_min")
+        tired = mins is not None and mins < 60
+        return v.with_(value=_fmt_min(mins), sub=tr("ets2.rest"), mono=True, label="", icon=v.icon or "bed",
+                       accent="#f59e0b" if tired else v.accent, anim="pulse" if tired else None)
+    if m == "clock":
+        return v.with_(value=str(d.get("game_clock") or "--"), sub=tr("ets2.clock"), mono=True, label="")
+    if m == "retarder":
+        lvl, mx = d.get("retarder") or 0, d.get("retarder_max") or 0
+        return v.with_(value=f"{lvl}/{mx}" if mx else "--", sub=tr("ets2.retarder"), mono=True, label="",
+                       active=lvl > 0, progress=(lvl / mx) if mx else 0, progress_style="bar")
+    return v
+
+
+# --------------------------------------------------------------------------- BeamNG.drive
+BNG_METRICS = tuple((m, f"bng.{m}") for m in (
+    "speed", "gear", "rpm", "fuel", "turbo", "eng_temp", "oil_temp", "pedals", "handbrake", "full_beam",
+    "signal_left", "signal_right", "hazard", "abs", "tc", "shift_light", "engine"))
+BNG_STATES = {"handbrake": "#ef4444", "full_beam": "#3b82f6", "signal_left": "#22c55e", "signal_right": "#22c55e",
+              "hazard": "#f97316", "abs": "#f59e0b", "tc": "#f59e0b", "shift_light": "#ef4444"}
+
+
+@widget("beamng", "games", "car-front", Field("metric", "choice", "speed", BNG_METRICS), needs=("beamng",))
+def _beamng(e, s, c, v):
+    d = e.beamng()
+    m = c.get("metric", "speed")
+    if not d.get("connected"):
+        return v.with_(dim=0.5, value=None, icon=v.icon or "car-front", label=v.label or tr(f"bng.{m}"))
+    if m in BNG_STATES:
+        on = bool(d.get(m))
+        return v.with_(active=on, accent=BNG_STATES[m] if on else v.accent,
+                       anim="blink" if on and m in ("hazard", "shift_light") else None)
+    if m == "engine":
+        on = not d.get("battery_warn")
+        return v.with_(active=on, accent="#22c55e" if on else v.accent)
+    if m == "speed":
+        return v.with_(value=f"{d.get('speed_kmh', 0):.0f}", sub="km/h", mono=True, label="")
+    rpm = d.get("rpm") or 0
+    frac = min(1.0, rpm / 7500)
+    if m == "gear":
+        return v.with_(value=str(d.get("gear", "N")), sub=f"{d.get('speed_kmh', 0):.0f} km/h", mono=True, label="",
+                       progress=e.smooth(s, "rpm", frac, 0.5), progress_style="bar",
+                       accent="#ef4444" if d.get("shift_light") else _load_color(frac))
+    if m == "rpm":
+        return v.with_(value=f"{rpm:.0f}", sub="RPM", mono=True, label="", progress=e.smooth(s, "rpm", frac, 0.5),
+                       accent=_load_color(frac))
+    if m == "fuel":
+        f = d.get("fuel") or 0
+        return v.with_(value=f"{f * 100:.0f}%", sub=tr("bng.fuel"), mono=True, label="", progress=f,
+                       progress_style="bar", accent=_load_color(1 - f), anim="pulse" if f < 0.1 else None)
+    if m == "turbo":
+        return v.with_(value=f"{d.get('turbo_bar') or 0:+.2f}", sub="bar", mono=True, label="",
+                       progress=max(0.0, min(1.0, (d.get("turbo_bar") or 0) / 2)))
+    if m in ("eng_temp", "oil_temp"):
+        t = d.get(m) or 0
+        hot = t > (110 if m == "eng_temp" else 130)
+        return v.with_(value=f"{t:.0f}°", sub=tr(f"bng.{m}"), mono=True, label="",
+                       accent="#ef4444" if hot else v.accent, anim="alert" if hot else None)
+    if m == "pedals":
+        thr, brk = d.get("throttle") or 0, d.get("brake") or 0
+        return v.with_(value=f"{thr * 100:.0f}", sub=f"{tr('bng.brake')} {brk * 100:.0f}", mono=True, label="",
+                       progress=e.smooth(s, "thr", thr, 0.6), progress_style="bar",
+                       accent="#ef4444" if brk > thr else "#22c55e")
+    return v
 
 
 def default_for(widget_id: str) -> dict[str, Any]:

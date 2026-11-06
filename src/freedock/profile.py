@@ -32,7 +32,7 @@ def config_dir() -> Path:
 class Slot:
     label: str = ""
     icon: str | None = None
-    style: dict[str, str] = field(default_factory=dict)   # bg, bg2, fg, accent
+    style: dict[str, Any] = field(default_factory=dict)   # see style.py: colours, font, animation...
     image: str | None = None
     action: Action | None = None
     long_action: Action | None = None
@@ -84,6 +84,7 @@ class Page:
     swipe_left: Action | None = None
     swipe_right: Action | None = None
     effects: list[str] = field(default_factory=list)   # e.g. "ac_shift_lights"
+    style: dict[str, Any] = field(default_factory=dict)  # defaults for every slot of this page
 
     @classmethod
     def new(cls, name: str) -> "Page":
@@ -101,7 +102,7 @@ class Page:
                    zones=pad(d.get("zones"), ZONES, Slot.from_dict),
                    knobs=pad(d.get("knobs"), KNOBS, Knob.from_dict),
                    swipe_left=swipe.get("left"), swipe_right=swipe.get("right"),
-                   effects=list(d.get("effects") or []))
+                   effects=list(d.get("effects") or []), style=dict(d.get("style") or {}))
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {"id": self.id, "name": self.name, "accent": self.accent}
@@ -117,6 +118,8 @@ class Page:
             d["swipe"] = swipe
         if self.effects:
             d["effects"] = self.effects
+        if self.style:
+            d["style"] = self.style
         return d
 
     def available_on(self, platform: str) -> bool:
@@ -133,6 +136,8 @@ class Profile:
     idle_minutes: int = 0             # 0 = never
     idle_mode: str = "clock"          # clock | aurora | off
     animations: bool = True
+    theme: dict[str, Any] = field(default_factory=dict)       # defaults for every slot of every page
+    seen_presets: list[str] = field(default_factory=list)     # built-in pages already offered
     path: Path | None = None
 
     # --------------------------------------------------------------- lookup
@@ -150,12 +155,16 @@ class Profile:
                    start_page=d.get("start_page"), pages=[Page.from_dict(p) for p in d.get("pages", [])],
                    auto_switch=list(d.get("auto_switch") or []),
                    idle_minutes=int(idle.get("minutes", 0)), idle_mode=idle.get("mode", "clock"),
-                   animations=bool(d.get("animations", True)))
+                   animations=bool(d.get("animations", True)), theme=dict(d.get("theme") or {}),
+                   # profiles from 0.1 had exactly these built-in pages
+                   seen_presets=list(d["seen_presets"] if "seen_presets" in d
+                                     else ["daily", "windows", "assetto", "msfs", "msfs2"]))
 
     def to_dict(self) -> dict:
         return {"schema": SCHEMA, "name": self.name, "brightness": self.brightness,
                 "start_page": self.start_page, "animations": self.animations,
                 "idle": {"minutes": self.idle_minutes, "mode": self.idle_mode},
+                "theme": self.theme, "seen_presets": self.seen_presets,
                 "auto_switch": self.auto_switch, "pages": [p.to_dict() for p in self.pages]}
 
     @classmethod
@@ -182,9 +191,14 @@ def load_or_create(language: str) -> Profile:
     path = default_profile_path()
     if path.is_file():
         try:
-            return Profile.load(path)
+            prof = Profile.load(path)
         except (OSError, ValueError, KeyError, TypeError):
             path.replace(path.with_suffix(".broken.json"))
+        else:
+            from .presets import add_new_presets
+            if add_new_presets(prof, language):
+                prof.save(path)
+            return prof
     from .presets import build_default_profile
     prof = build_default_profile(language)
     prof.save(path)

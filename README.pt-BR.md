@@ -35,6 +35,11 @@ dá o mesmo controle no Linux e traz o que o app oficial nunca teve.
 | 📊 **Widgets ao vivo** | Relógio, data, clima, CPU/GPU/RAM, rede, volume, estado do microfone, Pomodoro, cronômetro, status do OBS. |
 | 🏎️ **Assetto Corsa** | Marcha, voltas (roxo = melhor volta), posição, combustível, balanço de freio e temperatura dos pneus, direto da memória compartilhada. **Shift lights** na fileira de cima. As teclas disparam os *seus* binds, lidos do `controls.ini`. |
 | ✈️ **Flight Simulator 2020/2024** | Página de piloto automático: os knobs ajustam HDG, ALT, VS e BARO, e a faixa mostra os valores ao vivo. Trem, flaps, luzes e freios acendem conforme o simulador. Usa o SimConnect direto, sem SDK nem add-on pago. |
+| 🎨 **Personalize tudo** | Cada tecla, widget e página: cores, degradês, qualquer fonte instalada, tamanho de texto e ícone, cantos, bordas, imagens e **GIFs animados**, e 14 animações (pulso, brilho, reflexo, arco-íris, flutuar, girar, batimento, onda, scanner...). Um **tema** global define os padrões, cada página pode ter seu visual e qualquer tecla ainda pode ser diferente. Valores que mudam esmaecem, deslizam ou dão zoom. Guia: [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md). |
+| 🚚 **Euro Truck e American Truck Simulator** | Velocidade com o limite, marcha, combustível e autonomia, entrega, rota, tempo até o descanso, piloto automático e retarder nos knobs. Motor, faróis, giroflex e alerta acendem junto com o caminhão. As teclas disparam os *seus* binds do `controls.sii`. Telemetria pelo plugin comunitário [scs-sdk-plugin](https://github.com/RenCloud/scs-sdk-plugin). |
+| 🚗 **BeamNG.drive** | Velocidade, marcha com barra de giro, combustível, temperatura do motor, turbo, ESC e faróis pelo OutGauge que já vem no BeamNG. Ignição, freio de mão, recuperar, câmeras e câmera lenta usam os seus binds. |
+| 🤖 **Assistentes de IA** | Abra o Claude Code, o Codex ou o OpenCode com uma tecla. As teclas mostram quando cada um está **trabalhando, terminou ou espera por você** (a faixa anuncia e as luzes piscam), e o uso do plano em 5 horas e na semana. Um clique conecta os ganchos; qualquer script também pode avisar o deck (`freedock notify` ou HTTP em 127.0.0.1). |
+| 🌈 **Luzes RGB** | Shift lights na fita LED Ambibox/SyncLight e em teclados Razer Chroma, e um flash quando uma IA termina. Funciona junto com o app de ambilight [Ambibox LED](https://github.com/agentkyo/ambibox-led-ambilight). |
 | 🧭 **Você nunca se perde** | Em qualquer página, **segure uma tecla por 1,2 s** para abrir o menu de páginas. Toque na página que quer, ou gire qualquer knob e aperte para escolher. **Deslizar na faixa** sempre troca de página, e o nome da página aparece na faixa para você saber onde está. |
 | 🔁 **Páginas automáticas** | Abriu o Assetto Corsa ou o MSFS, o deck pula para a página dele. Fechou, ele volta. Funciona com qualquer `.exe`. |
 | ⌨️ **Ações** | Atalhos (gravados apertando as teclas), digitar texto, abrir sites ou arquivos, abrir programas, comandos, mídia, volume, microfone, rolagem, multiações com intervalo, webhooks, OBS. |
@@ -52,6 +57,10 @@ dá o mesmo controle no Linux e traz o que o app oficial nunca teve.
 | Flight Sim · Piloto automático | Flight Sim · Voo |
 |---|---|
 | ![MSFS piloto automático](docs/img/pages/msfs.png) | ![MSFS voo](docs/img/pages/msfs2.png) |
+
+| Assistentes de IA | Euro Truck | BeamNG.drive |
+|---|---|---|
+| ![Assistentes de IA](docs/img/pages/ai.png) | ![Euro Truck](docs/img/pages/ets2.png) | ![BeamNG.drive](docs/img/pages/beamng.png) |
 
 <sub>Prévias geradas com `freedock preview --demo`, que alimenta dados simulados dos jogos. O app mostra os textos no seu idioma.</sub>
 

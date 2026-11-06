@@ -25,10 +25,12 @@ from .platform import NAME as PLATFORM
 from .platform import os_backend as osb
 from .profile import Page, Profile, Slot
 from .render import Fx, Visual, render, to_device_jpeg
-from .render.painter import MONO_FONT, UI_FONT, ease_in_out, ease_out_cubic, load_fonts
+from .render.painter import MONO_FONT, UI_FONT, ease_in_out, ease_out_cubic, load_fonts, picture_frame
 from .settings import Settings
+from . import style as looks
 from .i18n import tr
 from .widgets import WIDGETS
+from .notify import HttpBridge, NotifyCenter, source as notify_source, EVENT_COLOR
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +40,8 @@ MENU_HOLD_S = 1.2          # hold any key this long -> page menu (works on every
 MENU_TIMEOUT_S = 10.0
 BANNER_S = 1.3
 TRANSITION_S = 0.42
+CHANGE_S = 0.28            # content change transition (value/icon/label), see style "change"
+ANIM_FPS = 20              # animations advance at most this often per key (USB budget)
 EMPTY = Visual(bg="#0a0c11", fg="#3a4252")
 
 
@@ -130,8 +134,16 @@ class Engine(QObject):
         self._timers: dict[str, Timer] = {}
         self._smooth: dict[tuple[str, str], float] = {}
         self._transition: Transition | None = None
+        self._looks: dict[str, dict] = {}            # merged style per slot key, from the last frame
+        self._content: dict[str, tuple] = {}         # what each slot showed, to spot changes
+        self._changes: dict[str, tuple] = {}         # key -> (old image, t0, mode) while cross-fading
         self._menu: dict | None = None          # {"t0", "sel", "offset"} while the page menu is open
         self._banner_t0: float = -1.0
+        self._announce: dict | None = None       # strip-wide announcement (notifications)
+        self.notify_center = NotifyCenter()
+        self.attention_hooks: list = []          # callables(source, event, message) - lights, sounds...
+        self._rgb_active = False
+        self._http = HttpBridge(self, int((settings.notify or {}).get("http_port") or 0))
         self._swallow_up: int | None = None
         self._boot_t0: float = -1.0
         self._last_input = time.monotonic()
@@ -163,11 +175,20 @@ class Engine(QObject):
 
     # ================================================================== lifecycle
     def start(self) -> None:
+        self._http.start()
         self._watcher.start()
         self._tick.start()
         self._auto.start()
 
     def stop(self) -> None:
+        self._http.stop()
+        if "lights" in self._started:
+            try:
+                from .integrations.lighting import lights
+                lights.restore()
+                lights.shutdown()
+            except Exception:  # noqa: BLE001
+                log.exception("lights shutdown")
         self._tick.stop()
         self._auto.stop()
         self._watcher.stop()
@@ -489,6 +510,10 @@ class Engine(QObject):
         from .integrations.system_stats import weather
         return weather.poll(self.settings.weather.get("lat"), self.settings.weather.get("lon"))
 
+    def ai_usage(self) -> dict:
+        from .integrations import ai
+        return getattr(ai, "usage", None).data if hasattr(ai, "usage") else {}
+
     def assetto(self) -> dict:
         from .integrations.assetto import telemetry
         return telemetry.data
@@ -507,6 +532,47 @@ class Engine(QObject):
         if mtime != self._ac_mtime:
             self._ac_bindings, self._ac_mtime = read_bindings(path), mtime
         return self._ac_bindings
+
+    def game_bindings(self, game: str) -> dict:
+        """Keyboard bindings of ETS2/ATS or BeamNG, re-read when the game's file changes."""
+        cache = self.__dict__.setdefault("_game_bind_cache", {})
+        try:
+            if game == "ets2":
+                from .integrations import ets2
+                path = ets2.controls_path()
+                key = (path, path.stat().st_mtime if path else 0)
+                if cache.get(game, (None, None))[0] != key:
+                    cache[game] = (key, ets2.read_bindings(path))
+            elif game == "beamng":
+                from .integrations import beamng
+                udir = beamng.user_dir()
+                diff = udir / "settings" / "inputmaps" / "keyboard.diff" if udir else None
+                key = (diff, diff.stat().st_mtime if diff and diff.exists() else 0)
+                if cache.get(game, (None, None))[0] != key:
+                    cache[game] = (key, beamng.read_bindings())
+            else:
+                return {}
+        except OSError:
+            return cache.get(game, (None, {}))[1]
+        return cache[game][1]
+
+    @staticmethod
+    def game_actions(game: str) -> dict:
+        if game == "ets2":
+            from .integrations.ets2 import ACTIONS
+            return ACTIONS
+        if game == "beamng":
+            from .integrations.beamng import ACTIONS
+            return ACTIONS
+        return {}
+
+    def ets2(self) -> dict:
+        from .integrations.ets2 import telemetry
+        return telemetry.data
+
+    def beamng(self) -> dict:
+        from .integrations.beamng import telemetry
+        return telemetry.data
 
     def smooth(self, ref: SlotRef, name: str, target: float, speed: float = 0.25) -> float:
         k = (ref.key, name)
@@ -529,8 +595,14 @@ class Engine(QObject):
                         needs.add("obs")
                     if a and a.get("type") == "sim_event":
                         needs.add("msfs")
+                    if a and a.get("type") == "lights":
+                        needs.add("lights")
             if "ac_shift_lights" in page.effects:
                 needs.add("assetto")
+            if "rgb_shift_lights" in page.effects:
+                needs.update(("lights", "assetto", "ets2", "beamng"))
+        if (self.settings.notify or {}).get("lights", True):
+            needs.add("lights")
         if "stats" in needs and "stats" not in self._started:
             from .integrations.system_stats import stats
             stats.start()
@@ -541,6 +613,18 @@ class Engine(QObject):
             from .integrations.msfs import sim
             sim.override = self.settings.simconnect_dll
             sim.start()
+        for game in ("ets2", "beamng"):
+            if game in needs and game not in self._started:
+                import importlib
+                importlib.import_module(f".integrations.{game}", __package__).telemetry.start()
+        if "lights" in needs and "lights" not in self._started:
+            self._start_lights()
+        if "ai" in needs and "ai" not in self._started:
+            try:
+                from .integrations.ai import usage
+                usage.start()
+            except (ImportError, AttributeError):
+                log.warning("AI usage reader unavailable")
         if "obs" in needs and "obs" not in self._started:
             from .integrations.obs import client
             o = self.settings.obs
@@ -575,13 +659,14 @@ class Engine(QObject):
         if self._menu is not None:
             return self._menu_visual(ref)
         slot = self._slot(ref)
-        st = slot.style
+        st = looks.merged(self.profile.theme, self.page.style, slot.style)
+        self._looks[ref.key] = st
         if slot.empty:
-            v = EMPTY.with_(accent=self.page.accent)
+            v = EMPTY.with_(accent=st.get("accent") or self.page.accent)
         else:
-            v = Visual(bg=st.get("bg", "#161a24"), bg2=st.get("bg2"), fg=st.get("fg", "#f5f7fb"),
-                       accent=st.get("accent", self.page.accent), icon=slot.icon, label=slot.label,
-                       image=slot.image)
+            kw = looks.visual_kwargs(st)
+            kw.setdefault("accent", self.page.accent)
+            v = Visual(icon=slot.icon, label=slot.label, image=slot.image, **kw)
         if slot.widget and (w := WIDGETS.get(slot.widget.get("type"))):
             try:
                 v = w.fn(self, ref, slot.widget, v)
@@ -590,7 +675,69 @@ class Engine(QObject):
                 v = v.with_(icon="triangle-alert", label="widget", accent="#ef4444", active=True)
         if ref.kind == Kind.KEY and ref.index < 5 and "ac_shift_lights" in self.page.effects:
             v = self._shift_light(ref.index, v)
+        return self._animate(ref, v, st)
+
+    def _animate(self, ref: SlotRef, v: Visual, st: dict) -> Visual:
+        """Apply the looks that depend on time: accent lock, animation phase, animated picture frame."""
+        if st.get("accent_lock") and st.get("accent"):
+            v = v.with_(accent=st["accent"])
+        now = time.monotonic()
+        anim = looks.animation_for(st, v.active, v.anim) if self.profile.animations else None
+        if anim:
+            period = looks.period(anim, st)
+            steps = max(6, min(60, int(period * ANIM_FPS)))
+            v = v.with_(anim=anim, anim_t=math.floor((now / period % 1.0) * steps) / steps)
+        elif v.anim:
+            v = v.with_(anim=None)
+        if v.image:
+            w, h = N4.size(ref.kind)
+            frame = picture_frame(v.image, w, h, v.image_fit, now * 1000)
+            if frame != v.frame:
+                v = v.with_(frame=frame)
         return v
+
+    def _content_change(self, ref: SlotRef, v: Visual, img: QImage, now: float) -> QImage:
+        """Cross-fade / slide / zoom between the old and the new content of a slot."""
+        sig = (v.value, v.label, v.icon, v.sub, v.image, v.badge)
+        old_sig = self._content.get(ref.key)
+        self._content[ref.key] = sig
+        mode = self._looks.get(ref.key, {}).get("change") or "none"
+        if (old_sig is not None and sig != old_sig and mode != "none" and self.profile.animations
+                and ref.key in self.images):
+            self._changes[ref.key] = (self.images[ref.key], now, mode)
+        ch = self._changes.get(ref.key)
+        if ch is None:
+            return img
+        old, t0, mode = ch
+        t = (now - t0) / CHANGE_S
+        if t >= 1:
+            del self._changes[ref.key]
+            return img
+        self._visuals.pop(ref.key, None)          # keep rendering until the change is done
+        t = ease_in_out(t)
+        w, h = img.width(), img.height()
+        out = QImage(w, h, QImage.Format.Format_RGB32)
+        out.fill(QColor("#000000"))
+        p = QPainter(out)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if mode == "slide":
+            p.drawImage(0, int(-t * h * 0.6), old)
+            p.setOpacity(t)
+            p.drawImage(0, int((1 - t) * h * 0.6), img)
+        elif mode == "zoom":
+            p.setOpacity(1 - t)
+            p.drawImage(0, 0, old)
+            s = 0.82 + 0.18 * t
+            p.setOpacity(t)
+            p.translate(w / 2, h / 2)
+            p.scale(s, s)
+            p.drawImage(int(-w / 2), int(-h / 2), img)
+        else:
+            p.drawImage(0, 0, old)
+            p.setOpacity(t)
+            p.drawImage(0, 0, img)
+        p.end()
+        return out
 
     def _shift_light(self, i: int, v: Visual) -> Visual:
         d = self.assetto()
@@ -636,6 +783,8 @@ class Engine(QObject):
                 self.deck_op("sleep")
             else:
                 self.deck_op("screensaver")
+        if "lights" in self._started:
+            self._rgb_shift_lights(now)
         if self._asleep:
             return
         if self._screensaver:
@@ -654,8 +803,9 @@ class Engine(QObject):
             self._banner_t0 = -1.0
             for i in range(N4.zone_count):          # banner over: redraw the real zones
                 self._visuals.pop(f"zone{i}", None)
+        announcing = self._menu is None and self._announce is not None
         for ref in SLOTS:
-            if banner and ref.kind == Kind.ZONE:
+            if (banner or announcing) and ref.kind == Kind.ZONE:
                 continue
             w, h = N4.size(ref.kind)
             v = self._visual(ref)
@@ -670,9 +820,151 @@ class Engine(QObject):
             if trans is not None:
                 img = self._compose_transition(ref, trans, img, now)
                 self._visuals.pop(ref.key, None)   # keep re-rendering until the slide finishes
+                self._content.pop(ref.key, None)
+                self._changes.pop(ref.key, None)
+            elif self._menu is not None:
+                self._content.pop(ref.key, None)
+            else:
+                img = self._content_change(ref, v, img, now)
             self._output(ref.key, ref, img)
+        if announcing and self._draw_announce(now):
+            return
         if banner:
             self._draw_banner(now)
+
+    # ------------------------------------------------------------------ notifications
+    def notify_event(self, src: str, event: str, message: str = "", progress: float | None = None) -> None:
+        """An outside event (AI assistant, script, webhook). UI thread."""
+        attention = self.notify_center.apply(src, event, message, progress)
+        log.info("notify %s %s %s", src, event, message[:80])
+        if not attention:
+            return
+        meta = notify_source(src)
+        text = tr(f"notify.{event}", name=meta.name)
+        cfg = self.settings.notify or {}
+        if cfg.get("banner", True):
+            self.announce(text, message, EVENT_COLOR.get(event, meta.color), meta.icon)
+        self.toast.emit(text + (f": {message}" if message else ""))
+        for hook in list(self.attention_hooks):
+            try:
+                hook(src, event, message)
+            except Exception:  # noqa: BLE001 - a broken light must not break notifications
+                log.exception("attention hook failed")
+
+    # ------------------------------------------------------------------ RGB lights
+    def _start_lights(self) -> None:
+        from .integrations.lighting import lights
+        cfg = self.settings.lighting or {}
+        lights.configure(strip_enabled=bool(cfg.get("strip", True)), strip_count=int(cfg.get("strip_count", 71)),
+                         chroma_enabled=bool(cfg.get("chroma", True)))
+        if self._light_hook not in self.attention_hooks:
+            self.attention_hooks.append(self._light_hook)
+
+    def _light_hook(self, src: str, event: str, message: str) -> None:
+        if not (self.settings.notify or {}).get("lights", True):
+            return
+        from .integrations.lighting import lights
+        h = EVENT_COLOR.get(event, notify_source(src).color).lstrip("#")
+        lights.flash((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)), times=3)
+        self._rgb_pause_until = time.monotonic() + 1.2      # let the flash play before shift lights resume
+
+    def _rgb_shift_lights(self, now: float) -> None:
+        """Rev bar on the LED strip / keyboard while a racing page with the effect is open."""
+        on = "rgb_shift_lights" in self.page.effects
+        frac = None
+        if on:
+            for get in (self.assetto, self.ets2, self.beamng):
+                try:
+                    d = get()
+                except Exception:  # noqa: BLE001 - an integration that never started
+                    continue
+                if d.get("connected") and d.get("rpm") is not None:
+                    top = d.get("max_rpm") or (2500 if get == self.ets2 else 7500)
+                    frac = max(0.0, min(1.0, (d["rpm"] / top - 0.55) / 0.42))
+                    break
+        from .integrations.lighting import lights
+        if frac is None:
+            if self._rgb_active:
+                lights.restore()
+                self._rgb_active = False
+            return
+        if now < getattr(self, "_rgb_pause_until", 0) or now - getattr(self, "_rgb_last", 0) < 1 / 25:
+            return
+        self._rgb_last = now
+        self._rgb_active = True
+        lights.bar(round(frac, 3))
+
+    def ack_notify(self, src: str | None = None) -> None:
+        self.notify_center.ack(src)
+
+    def announce(self, text: str, sub: str = "", color: str = "#5b8cff", icon: str | None = None,
+                 seconds: float = 3.2) -> None:
+        """Show a message across the whole touch strip for a few seconds."""
+        self._announce = {"text": text, "sub": sub, "color": color, "icon": icon, "t0": time.monotonic(),
+                          "dur": seconds}
+        self._wake()
+
+    def _draw_announce(self, now: float) -> bool:
+        a = self._announce
+        if a is None:
+            return False
+        t = (now - a["t0"]) / a["dur"]
+        if t >= 1:
+            self._announce = None
+            for i in range(N4.zone_count):
+                self._visuals.pop(f"zone{i}", None)
+                self._content.pop(f"zone{i}", None)
+            return False
+        from .render.painter import icon_image
+        alpha = min(1.0, t * 8) * min(1.0, (1 - t) * 6)
+        zw, zh = N4.zone_size
+        canvas = QImage(zw * 4, zh, QImage.Format.Format_RGB32)
+        canvas.fill(QColor("#000000"))
+        p = QPainter(canvas)
+        p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+        p.setOpacity(alpha)
+        color = QColor(a["color"])
+        g = QLinearGradient(0, 0, canvas.width(), 0)
+        g.setColorAt(0, color.darker(420))
+        g.setColorAt(0.5, color.darker(200))
+        g.setColorAt(1, color.darker(420))
+        p.fillRect(QRectF(0, 0, canvas.width(), zh), g)
+        # light sweep, twice per announcement
+        x = (t * 2 % 1.0) * canvas.width() * 1.4 - canvas.width() * 0.2
+        sweep = QLinearGradient(x - 120, 0, x + 120, 0)
+        sweep.setColorAt(0, QColor(255, 255, 255, 0))
+        sweep.setColorAt(0.5, QColor(255, 255, 255, 60))
+        sweep.setColorAt(1, QColor(255, 255, 255, 0))
+        p.fillRect(QRectF(0, 0, canvas.width(), zh), sweep)
+        left = zh * 0.35
+        if a.get("icon") and (ic := icon_image(a["icon"], "#ffffff", int(zh * 0.5))):
+            pulse = 1 + 0.08 * math.sin(now * 9)
+            p.save()
+            p.translate(left + ic.width() / 2, zh / 2)
+            p.scale(pulse, pulse)
+            p.drawImage(int(-ic.width() / 2), int(-ic.height() / 2), ic)
+            p.restore()
+            left += ic.width() + zh * 0.25
+        f = QFont(UI_FONT)
+        f.setPixelSize(int(zh * (0.32 if a.get("sub") else 0.40)))
+        f.setWeight(QFont.Weight.Black)
+        p.setFont(f)
+        p.setPen(QColor("#ffffff"))
+        text_rect = QRectF(left, 0, canvas.width() - left - zh * 0.3, zh * (0.58 if a.get("sub") else 1.0))
+        p.drawText(text_rect, int(Qt.AlignmentFlag.AlignLeft | (Qt.AlignmentFlag.AlignBottom if a.get("sub")
+                                                                else Qt.AlignmentFlag.AlignVCenter)), a["text"])
+        if a.get("sub"):
+            f.setPixelSize(int(zh * 0.2))
+            f.setWeight(QFont.Weight.Medium)
+            p.setFont(f)
+            p.setPen(QColor(255, 255, 255, 210))
+            sub = p.fontMetrics().elidedText(a["sub"], Qt.TextElideMode.ElideRight, int(text_rect.width()))
+            p.drawText(QRectF(left, zh * 0.62, text_rect.width(), zh * 0.3),
+                       int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop), sub)
+        p.end()
+        for i in range(N4.zone_count):
+            self._output(f"zone{i}", SlotRef(Kind.ZONE, i), canvas.copy(i * zw, 0, zw, zh))
+        return True
 
     def _draw_banner(self, now: float) -> None:
         """Page name across the whole strip right after a page change, so you always know where you are."""

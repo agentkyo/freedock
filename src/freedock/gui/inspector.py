@@ -9,12 +9,13 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGridLayout,
 from ..i18n import tr
 from ..profile import Knob, Page, Slot
 from ..render.painter import icon_image
-from .editors import ActionEditor, ColorButton, IconPicker, WidgetEditor, section
+from .editors import ActionEditor, ColorButton, IconPicker, StyleEditor, WidgetEditor, section
 from .theme import PALETTES
 
 
 class Inspector(QScrollArea):
     changed = Signal()
+    advanced_open = False          # remembered while the app runs
 
     def __init__(self, context):
         super().__init__()
@@ -79,7 +80,7 @@ class Inspector(QScrollArea):
         img_btn.setToolTip(slot.image or "")
 
         def pick_image():
-            path, _ = QFileDialog.getOpenFileName(self, tr("ui.picture"), "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
+            path, _ = QFileDialog.getOpenFileName(self, tr("ui.picture"), "", tr("ui.picture_filter") + " (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.apng)")
             self._edit(slot, "image", path or None)
         img_btn.clicked.connect(pick_image)
         icon_row.addWidget(icon_btn, 1)
@@ -106,6 +107,20 @@ class Inspector(QScrollArea):
             b.clicked.connect(lambda _=False, bg=bg, bg2=bg2, a=accent: self._palette(slot, bg, bg2, a))
             pal.addWidget(b, i // 5, i % 5)
         lay.addLayout(pal)
+
+        more = QPushButton(("▾ " if Inspector.advanced_open else "▸ ") + tr("ui.more_looks"))
+        more.setObjectName("link")
+        lay.addWidget(more)
+        looks = StyleEditor(slot.style)
+        looks.changed.connect(self.changed.emit)
+        looks.setVisible(Inspector.advanced_open)
+        lay.addWidget(looks)
+
+        def toggle_looks():
+            Inspector.advanced_open = not Inspector.advanced_open
+            looks.setVisible(Inspector.advanced_open)
+            more.setText(("▾ " if Inspector.advanced_open else "▸ ") + tr("ui.more_looks"))
+        more.clicked.connect(toggle_looks)
 
         lay.addWidget(section(tr("ui.live_widget")))
         we = WidgetEditor(slot.widget, self.context)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "freedock"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source driver and editor for the MiraBox N4 StreamDock - Windows & Linux, no vendor software."
 readme = "README.md"
 license = "MIT"
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pillow>=10"]
 
 [project.urls]
 Homepage = "https://github.com/agentkyo/freedock"

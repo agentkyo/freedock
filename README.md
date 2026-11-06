@@ -35,6 +35,11 @@ the same control on Linux, and adds things the vendor app never had.
 | 📊 **Live widgets** | Clock, date, weather, CPU/GPU/RAM gauges, network, volume, mic state, Pomodoro, stopwatch, OBS status. |
 | 🏎️ **Assetto Corsa** | Gear, laps (purple = personal best), position, fuel, brake bias and tyre temps from shared memory. **Shift lights** run across the top row. Keys fire *your own* bindings, read from `controls.ini`. |
 | ✈️ **Flight Simulator 2020/2024** | An autopilot page: knobs set HDG, ALT, VS and BARO, and the strip shows the values live. Gear, flaps, lights and brakes light up from the sim. Uses SimConnect directly, no SDK or paid add-on. |
+| 🎨 **Customise everything** | Every key, widget and page: colours, gradients, any installed font, text and icon size, corners, borders, pictures and **animated GIFs**, and 14 animations (pulse, glow, shimmer, rainbow, float, spin, heartbeat, wave, scanner...). A global **theme** sets the defaults, each page can have its own look, and any key can still differ. Changing values cross-fade, slide or zoom. Guide: [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md). |
+| 🚚 **Euro Truck & American Truck Simulator** | Speed with the limit, gear, fuel and range, delivery, route, rest timer, cruise and retarder on the knobs. Engine, lights, beacon and hazards light up with the truck. The keys fire *your* bindings from `controls.sii`. Telemetry through the community [scs-sdk-plugin](https://github.com/RenCloud/scs-sdk-plugin). |
+| 🚗 **BeamNG.drive** | Speed, gear with rev bar, fuel, engine temperature, turbo, ESC and lights from BeamNG's built-in OutGauge. Ignition, handbrake, recover, cameras and slow motion use your own key bindings. |
+| 🤖 **AI assistants** | Open Claude Code, Codex or OpenCode with one key. Tiles show when each one is **working, done or waiting for you** (the strip announces it and the lights flash), plus 5-hour and weekly plan usage. One click connects the hooks; any script can notify the deck too (`freedock notify`, or HTTP on 127.0.0.1). |
+| 🌈 **RGB lights** | Shift lights on an Ambibox/SyncLight LED strip and on Razer Chroma keyboards, and a flash when an AI finishes. Works alongside the [Ambibox LED](https://github.com/agentkyo/ambibox-led-ambilight) ambilight app. |
 | 🧭 **Never get lost** | On every page, **hold any key for 1.2 s** to open the page menu. Tap a page, or turn any knob and push to pick one. **Swiping the strip** always changes page, and the page name flashes across the strip so you know where you landed. |
 | 🔁 **Automatic pages** | Open Assetto Corsa or MSFS and the deck switches to its page, then switches back when you quit. Works with any `.exe`. |
 | ⌨️ **Actions** | Hotkeys (recorded by pressing them), type text, open URLs or files, launch apps, commands, media, volume, mic, scroll, multi-actions with delays, webhooks, OBS. |
@@ -52,6 +57,10 @@ the same control on Linux, and adds things the vendor app never had.
 | Flight Sim · Autopilot | Flight Sim · Flight |
 |---|---|
 | ![MSFS autopilot](docs/img/pages/msfs.png) | ![MSFS flight](docs/img/pages/msfs2.png) |
+
+| AI assistants | Euro Truck | BeamNG.drive |
+|---|---|---|
+| ![AI assistants](docs/img/pages/ai.png) | ![Euro Truck](docs/img/pages/ets2.png) | ![BeamNG.drive](docs/img/pages/beamng.png) |
 
 <sub>These previews were rendered with `freedock preview --demo`, which feeds simulated game data.</sub>
 

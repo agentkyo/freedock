@@ -112,10 +112,105 @@ def serve_instance(handlers: dict):
         sock = server.nextPendingConnection()
         sock.waitForReadyRead(400)
         msg = bytes(sock.readAll().data()).decode(errors="ignore").strip()
-        if msg in handlers:
-            handlers[msg]()
+        name, _, arg = msg.partition(" ")
+        if name in handlers:
+            try:
+                handlers[name](arg) if arg else handlers[name]()
+            except Exception:  # noqa: BLE001 - a bad message must not take the app down
+                logging.exception("instance message %s failed", name)
     server.newConnection.connect(on_conn)
     return server
+
+
+def _deliver_notify(engine, arg: str) -> None:
+    from .notify import parse_message
+    d = parse_message(arg)
+    if d:
+        engine.notify_event(str(d["source"]), str(d.get("event") or "done"), str(d.get("message") or ""),
+                            d.get("progress"))
+
+
+def _hook_stdin() -> str:
+    """The JSON a Claude Code hook writes to stdin (empty when run by hand)."""
+    try:
+        if sys.stdin is None or sys.stdin.isatty():
+            return ""
+        return sys.stdin.read(1_000_000)
+    except (OSError, ValueError):
+        return ""
+
+
+def cmd_notify(args) -> int:
+    """Tell the running FreeDock that something happened (used by AI hooks and scripts)."""
+    import json
+    event, message = args.event, args.message or ""
+    if event.lstrip().startswith("{"):
+        # Codex's notify program gets its JSON payload as the last argument
+        from .integrations import ai, ai_setup
+        mapped = ai.codex_event_from_payload(event)
+        ai.codex_forward(ai_setup.codex_previous(), event)      # keep the Codex app's own notifier working
+        if not mapped:
+            return 0
+        event, message = mapped[0], message or (mapped[1] or "")
+    elif args.source == "claude" and not message:
+        stdin = _hook_stdin()
+        if stdin:
+            from .integrations import ai
+            mapped = ai.claude_event_from_hook(stdin)
+            if mapped is None:
+                return 0
+            event, message = mapped[0], mapped[1] or ""
+    payload = {"source": args.source, "event": event, "message": message}
+    if args.progress is not None:
+        payload["progress"] = args.progress
+    from PySide6.QtCore import QCoreApplication
+    QCoreApplication.instance() or QCoreApplication([])
+    if send_to_running("notify " + json.dumps(payload, ensure_ascii=False)):
+        return 0
+    print("FreeDock is not running.", file=sys.stderr)
+    return 1
+
+
+def cmd_statusline(args) -> int:
+    """Claude Code status line: records the plan usage % for the deck, then prints the user's own line."""
+    from .integrations import ai
+    from .settings import Settings
+    previous = (Settings.load().ai or {}).get("claude_statusline_previous")
+    sys.stdout.write(ai.claude_statusline_output(_hook_stdin(), previous) + "\n")
+    return 0
+
+
+def cmd_ai(args) -> int:
+    """Install or remove the Claude Code / Codex / OpenCode bridges."""
+    from .integrations import ai_setup
+    from .settings import Settings
+    cmd = launch_command()
+    tools = ("claude", "codex", "opencode") if args.tool == "all" else (args.tool,)
+    s = Settings.load()
+    for tool in tools:
+        try:
+            if args.op == "install":
+                if tool == "claude":
+                    prev = ai_setup.claude_install(cmd)
+                    if prev:
+                        s.ai = {**(s.ai or {}), "claude_statusline_previous": prev}
+                        s.save()
+                elif tool == "codex":
+                    ai_setup.codex_install(cmd)
+                else:
+                    ai_setup.opencode_install(cmd)
+            elif args.op == "remove":
+                if tool == "claude":
+                    ai_setup.claude_remove((s.ai or {}).get("claude_statusline_previous"))
+                elif tool == "codex":
+                    ai_setup.codex_remove()
+                else:
+                    ai_setup.opencode_remove()
+            ok = getattr(ai_setup, f"{tool}_installed")()
+            print(f"{tool:9} {'installed' if ok else 'not installed'}")
+        except (OSError, ValueError) as exc:
+            print(f"{tool:9} error: {exc}")
+    return 0
 
 
 def cmd_quit(args) -> int:
@@ -139,7 +234,8 @@ def cmd_run(args) -> int:
     engine.device_changed.connect(lambda s: logging.info("device: %s", s or "disconnected"))
     engine.page_changed.connect(lambda p: logging.info("page: %s", p))
     engine.start()
-    _server = serve_instance({"quit": app.quit, "ping": lambda: None})  # noqa: F841 - keep alive
+    _server = serve_instance({"quit": app.quit, "ping": lambda: None,  # noqa: F841 - keep alive
+                              "notify": lambda arg: _deliver_notify(engine, arg)})
     signal.signal(signal.SIGINT, lambda *a: app.quit())
     signal.signal(signal.SIGTERM, lambda *a: app.quit())
     from PySide6.QtCore import QTimer
@@ -303,6 +399,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--lang")
     sub.add_parser("list", help="list connected devices")
     sub.add_parser("quit", help="close a running FreeDock cleanly")
+    nt = sub.add_parser("notify", help="send an event to the running FreeDock (AI hooks, scripts)")
+    nt.add_argument("source", help="claude | codex | opencode | custom | any name")
+    nt.add_argument("event", nargs="?", default="done", help="working | progress | done | question | error | idle")
+    nt.add_argument("--message", "-m", default="")
+    nt.add_argument("--progress", type=float)
+    sub.add_parser("statusline", help="Claude Code status line bridge (reads JSON on stdin)")
+    ai_p = sub.add_parser("ai", help="install/remove the Claude Code, Codex and OpenCode bridges")
+    ai_p.add_argument("op", choices=("install", "remove", "status"))
+    ai_p.add_argument("tool", nargs="?", default="all", choices=("all", "claude", "codex", "opencode"))
     sub.add_parser("events", help="print decoded key/knob/touch events")
     pv = sub.add_parser("preview", help="render all pages to PNG files")
     pv.add_argument("--out", default="preview")
@@ -315,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--lang")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
-    handlers = {"quit": cmd_quit, "run": cmd_run, "list": cmd_list, "events": cmd_events, "preview": cmd_preview,
+    handlers = {"quit": cmd_quit, "notify": cmd_notify, "statusline": cmd_statusline, "ai": cmd_ai, "run": cmd_run, "list": cmd_list, "events": cmd_events, "preview": cmd_preview,
                 "import-streamdock": cmd_import, "reset-profile": cmd_reset}
     if args.cmd in (None, "gui"):
         return gui_main([])

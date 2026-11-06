@@ -204,6 +204,85 @@ def _sim_event(engine, a):
         log.info("SimConnect not connected; %s dropped", a.get("event"))
 
 
+# --------------------------------------------------------------------------- more games
+def _game_key(engine, game: str, binding: str) -> None:
+    b = engine.game_bindings(game).get(binding)
+    if b is None:
+        log.warning("%s binding %s has no keyboard key", game, binding)
+        engine.notify_missing_binding(f"{game}: {binding}")
+        return
+    osb.press_combo(b.combo, 70)
+
+
+@action("ets2_binding", "games", "truck", Field("binding", "game_binding:ets2", "light"))
+def _ets2_binding(engine, a):
+    _game_key(engine, "ets2", a.get("binding", ""))
+
+
+@action("beamng_binding", "games", "car-front", Field("binding", "game_binding:beamng", "toggle_headlights"))
+def _beamng_binding(engine, a):
+    _game_key(engine, "beamng", a.get("binding", ""))
+
+
+# --------------------------------------------------------------------------- AI assistants
+AI_TOOLS = (("claude", "ai.claude"), ("codex", "ai.codex"), ("codex_app", "ai.codex_app"),
+            ("opencode", "ai.opencode"), ("all", "ai.all"))
+
+
+@action("ai", "ai", "sparkles", Field("tool", "choice", "claude", AI_TOOLS),
+        Field("op", "choice", "open", (("open", "ai.op.open"), ("ack", "ai.op.ack"), ("open_ack", "ai.op.open_ack"))))
+def _ai(engine, a):
+    tool = a.get("tool") or a.get("source") or "claude"
+    op = a.get("op", "open")
+    if op in ("ack", "open_ack") or tool == "all":
+        src = None if tool == "all" else "codex" if tool == "codex_app" else tool
+        engine.call_in_ui(lambda: engine.ack_notify(src))
+    if op in ("open", "open_ack") and tool != "all":
+        from .integrations.ai import launch_commands
+        cmd = launch_commands().get(tool)
+        if not cmd:
+            log.warning("no launcher for %s", tool)
+            return
+        import subprocess
+        try:
+            subprocess.Popen(cmd, close_fds=True)
+        except OSError as exc:
+            log.warning("cannot start %s: %s", tool, exc)
+
+
+# --------------------------------------------------------------------------- RGB lights
+LIGHT_TARGETS = (("all", "lights.all"), ("strip", "lights.strip"), ("chroma", "lights.chroma"))
+
+
+@action("lights", "lights", "lightbulb",
+        Field("op", "choice", "color", (("color", "lights.color"), ("flash", "lights.flash"),
+                                        ("effect", "lights.effect"), ("restore", "lights.restore"))),
+        Field("color", "color", "#5b8cff"), Field("effect", "int", 0), Field("target", "choice", "all", LIGHT_TARGETS))
+def _lights(engine, a):
+    from .integrations.lighting import lights
+    rgb = _rgb(a.get("color") or "#5b8cff")
+    target = a.get("target", "all")
+    op = a.get("op", "color")
+    if op == "flash":
+        lights.flash(rgb, target=target)
+    elif op == "effect":
+        lights.effect(int(a.get("effect", 0)))
+    elif op == "restore":
+        lights.restore(target)
+    else:
+        lights.color(rgb, target=target)
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except (ValueError, IndexError):
+        return 91, 140, 255
+
+
 # --------------------------------------------------------------------------- dispatch
 def run_now(engine: "Engine", a: dict | None) -> None:
     """Run an action synchronously on the current thread (deck actions hop to the UI thread)."""
@@ -237,6 +316,8 @@ def describe(a: dict | None) -> str:
         return "AC: " + a.get("binding", "")
     if t == "sim_event":
         return "SIM: " + a.get("event", "")
+    if t in ("ets2_binding", "beamng_binding"):
+        return ("ETS2: " if t == "ets2_binding" else "BeamNG: ") + a.get("binding", "")
     if t in ("open", "launch", "command"):
         return tr(f"action.{t}") + ": " + str(a.get("target") or a.get("path") or a.get("command") or "")
     return tr(f"action.{t}")

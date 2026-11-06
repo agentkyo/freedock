@@ -151,7 +151,8 @@ def windows(lang: str) -> Page:
 
 
 def assetto(lang: str) -> Page:
-    p = Page(id="assetto", name=_t(lang, "assetto"), icon="car", accent="#ef4444", effects=["ac_shift_lights"])
+    p = Page(id="assetto", name=_t(lang, "assetto"), icon="car", accent="#ef4444",
+             effects=["ac_shift_lights", "rgb_shift_lights"], style={"change": "zoom"})
     dark = st("#0a0a0a", "#171717")
     p.keys = [
         Slot(widget=w("ac", metric="gear"), style=st("#000000", "#111111", "#22c55e")),
@@ -283,8 +284,199 @@ def msfs_flight(lang: str) -> Page:
 def build_default_profile(lang: str) -> Profile:
     return Profile(
         name="FreeDock", brightness=70, start_page="daily",
-        pages=[daily(lang), windows(lang), assetto(lang), msfs(lang), msfs_flight(lang)],
+        pages=[daily(lang), windows(lang), assetto(lang), msfs(lang), msfs_flight(lang),
+               *(build(lang) for build in NEW_PAGES.values())],
         auto_switch=[{"process": "acs.exe", "page": "assetto"},
                      {"process": "FlightSimulator2024.exe", "page": "msfs"},
-                     {"process": "FlightSimulator.exe", "page": "msfs"}],
-        idle_minutes=15, idle_mode="clock")
+                     {"process": "FlightSimulator.exe", "page": "msfs"}, *NEW_RULES],
+        idle_minutes=15, idle_mode="clock",
+        seen_presets=["daily", "windows", "assetto", "msfs", "msfs2", *NEW_PAGES, "assetto+rgb"])
+
+
+# --------------------------------------------------------------------------- upgrades
+NEW_PAGES: dict = {}     # page id -> builder(lang), pages added after 0.1
+
+
+def add_new_presets(profile: Profile, lang: str) -> bool:
+    """Offer built-in pages added in newer versions to an existing profile, once each."""
+    changed = False
+    for pid, build in NEW_PAGES.items():
+        if pid in profile.seen_presets:
+            continue
+        profile.seen_presets.append(pid)
+        changed = True
+        if profile.page(pid) is None:
+            profile.pages.append(build(lang))
+            known = {r.get("process", "").lower() for r in profile.auto_switch}
+            profile.auto_switch += [r for r in NEW_RULES if r["page"] == pid and r["process"].lower() not in known]
+    # 0.2: the built-in Assetto page also drives RGB shift lights
+    if "assetto+rgb" not in profile.seen_presets:
+        profile.seen_presets.append("assetto+rgb")
+        changed = True
+        page = profile.page("assetto")
+        if page and "ac_shift_lights" in page.effects and "rgb_shift_lights" not in page.effects:
+            page.effects.append("rgb_shift_lights")
+    return changed
+
+
+# --------------------------------------------------------------------------- pages added in 0.2
+L.update({
+    "ets2": {"en": "Euro Truck", "pt": "Euro Truck", "es": "Euro Truck"},
+    "beamng": {"en": "BeamNG.drive", "pt": "BeamNG.drive", "es": "BeamNG.drive"},
+    "ai": {"en": "AI assistants", "pt": "Assistentes de IA", "es": "Asistentes de IA"},
+    "engine": {"en": "Engine", "pt": "Motor", "es": "Motor"},
+    "parking": {"en": "Park brake", "pt": "Freio mão", "es": "Freno mano"},
+    "camera": {"en": "Camera", "pt": "Câmera", "es": "Cámara"},
+    "ignition": {"en": "Ignition", "pt": "Ignição", "es": "Encendido"},
+    "recover": {"en": "Recover", "pt": "Recuperar", "es": "Recuperar"},
+    "slowmo": {"en": "Slow-mo", "pt": "Câmera lenta", "es": "Cámara lenta"},
+    "esc": {"en": "ESC / TC", "pt": "ESC / TC", "es": "ESC / TC"},
+    "clear": {"en": "Clear alerts", "pt": "Limpar avisos", "es": "Borrar avisos"},
+    "focus": {"en": "Focus", "pt": "Foco", "es": "Foco"},
+})
+
+
+def e2(binding: str) -> dict:
+    return {"type": "ets2_binding", "binding": binding}
+
+
+def bn(binding: str) -> dict:
+    return {"type": "beamng_binding", "binding": binding}
+
+
+def _nav(home: str) -> Knob:
+    return Knob(left={"type": "page", "target": "prev"}, right={"type": "page", "target": "next"},
+                press={"type": "page", "target": home})
+
+
+PAGE_NAME_ZONE_STYLE = st("#1e1b4b", "#0b0a1f", "#818cf8")
+
+
+def ets2(lang: str) -> Page:
+    p = Page(id="ets2", name=_t(lang, "ets2"), icon="truck", accent="#f59e0b", effects=["rgb_shift_lights"],
+             style={"change": "slide"})
+    dash = st("#0b0f19", "#151b2b", "#f59e0b")
+    warm = st("#3a2a05", "#1a1302", "#facc15")
+    p.keys = [
+        Slot(widget=w("ets2", metric="speed"), action=e2("cruiectrl"), style=dash),
+        Slot(widget=w("ets2", metric="gear"), style=st("#000000", "#111111", "#22c55e")),
+        Slot(widget=w("ets2", metric="fuel"), style=dash),
+        Slot(widget=w("ets2", metric="job"), action=e2("navmap"), long_action=e2("attach"), style=dash),
+        Slot(widget=w("ets2", metric="rest"), style=dash),
+        Slot(label=_t(lang, "engine"), icon="power", action=e2("engine"), long_action=e2("engineelect"),
+             widget=w("ets2", metric="engine_on"), style=st("#14261a", "#08120c", "#22c55e")),
+        Slot(label=_t(lang, "parking"), icon="circle-parking", action=e2("parkingbrake"),
+             widget=w("ets2", metric="parking_brake"), style=st("#3a0d14", "#1a0609", "#ef4444")),
+        Slot(label=_t(lang, "headlights"), icon="lightbulb", action=e2("light"), long_action=e2("hblight"),
+             widget=w("ets2", metric="lights_low"), style=warm),
+        Slot(label=_t(lang, "beacon"), icon="siren", action=e2("beacon"), widget=w("ets2", metric="beacon"),
+             style=warm),
+        Slot(label=_t(lang, "hazards"), icon="triangle-alert", action=e2("flasher4way"), long_action=e2("airhorn"),
+             widget=w("ets2", metric="hazard"), style=st("#3a1d05", "#1a0d02", "#f97316")),
+    ]
+    p.zones = [
+        Slot(widget=w("ets2", metric="cruise"), action=e2("cruiectrl"), style=dash),
+        Slot(widget=w("ets2", metric="retarder"), action=e2("engbraketog"), style=dash),
+        Slot(label=_t(lang, "camera"), icon="camera", action=e2("camcycle"), long_action=e2("horn"), style=SLATE),
+        Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
+    ]
+    p.knobs = [
+        Knob(left=e2("cruiectrldec"), right=e2("cruiectrlinc"), press=e2("cruiectrlres")),
+        Knob(left=e2("retarderdown"), right=e2("retarderup"), press=e2("engbraketog")),
+        Knob(left=e2("lookleft"), right=e2("lookright"), press=e2("camcycle")),
+        _nav("ets2"),
+    ]
+    return p
+
+
+def beamng(lang: str) -> Page:
+    p = Page(id="beamng", name=_t(lang, "beamng"), icon="car-front", accent="#f97316", effects=["rgb_shift_lights"],
+             style={"change": "zoom"})
+    dash = st("#0b0f19", "#151b2b", "#f97316")
+    warm = st("#3a2a05", "#1a1302", "#facc15")
+    p.keys = [
+        Slot(widget=w("beamng", metric="speed"), style=dash),
+        Slot(widget=w("beamng", metric="gear"), style=st("#000000", "#111111", "#22c55e")),
+        Slot(widget=w("beamng", metric="fuel"), style=dash),
+        Slot(widget=w("beamng", metric="eng_temp"), style=dash),
+        Slot(widget=w("beamng", metric="turbo"), style=dash),
+        Slot(label=_t(lang, "ignition"), icon="power", action=bn("activateStarterMotor"),
+             long_action=bn("setIgnitionLevel0"), widget=w("beamng", metric="engine"),
+             style=st("#14261a", "#08120c", "#22c55e")),
+        Slot(label=_t(lang, "parking"), icon="circle-parking", action=bn("parkingbrake_toggle"),
+             widget=w("beamng", metric="handbrake"), style=st("#3a0d14", "#1a0609", "#ef4444")),
+        Slot(label=_t(lang, "headlights"), icon="lightbulb", action=bn("toggle_headlights"), long_action=bn("highbeam"),
+             widget=w("beamng", metric="full_beam"), style=warm),
+        Slot(label=_t(lang, "hazards"), icon="triangle-alert", action=bn("toggle_hazard_signal"),
+             widget=w("beamng", metric="hazard"), style=st("#3a1d05", "#1a0d02", "#f97316")),
+        Slot(label=_t(lang, "recover"), icon="rotate-ccw", action=bn("recover_vehicle"), long_action=bn("reset_physics"),
+             style=st("#0c2d48", "#06182a", "#38bdf8")),
+    ]
+    p.zones = [
+        Slot(label=_t(lang, "esc"), icon="gauge", action=bn("toggleESCMode"), widget=w("beamng", metric="tc"),
+             style=dash),
+        Slot(label=_t(lang, "camera"), icon="camera", action=bn("switch_camera_next"), long_action=bn("toggleCamera"),
+             style=SLATE),
+        Slot(label=_t(lang, "slowmo"), icon="snail", action=bn("toggle_slow_motion"), style=SLATE),
+        Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
+    ]
+    p.knobs = [
+        Knob(left=bn("toggle_left_signal"), right=bn("toggle_right_signal"), press=bn("horn")),
+        Knob(left=bn("switch_camera_prev"), right=bn("switch_camera_next"), press=bn("toggleCamera")),
+        Knob(left=bn("slower_motion"), right=bn("faster_motion"), press=bn("pause")),
+        _nav("beamng"),
+    ]
+    return p
+
+
+def ai_page(lang: str) -> Page:
+    p = Page(id="ai", name=_t(lang, "ai"), icon="sparkles", accent="#d97757")
+    claude = st("#2a1408", "#140a04", "#d97757")
+    codex = st("#06231b", "#03120d", "#10a37f")
+    opencode = st("#2b2105", "#151002", "#f5a623")
+
+    def status(src, style, tool=None):
+        return Slot(widget=w("ai", source=src, show="status"), style=style,
+                    action={"type": "ai", "tool": tool or src, "op": "open_ack"})
+
+    def usage(src, show, style, label):
+        return Slot(label=label, widget=w("ai", source=src, show=show), style=style)
+
+    p.keys = [
+        status("claude", claude),
+        status("codex", codex, "codex_app"),
+        status("opencode", opencode),
+        usage("claude", "usage_5h", claude, "Claude 5h"),
+        usage("claude", "usage_week", claude, "Claude 7d"),
+        Slot(label="Claude Code", icon="square-terminal", action={"type": "ai", "tool": "claude", "op": "open"},
+             style=claude),
+        Slot(label="Codex", icon="app-window", action={"type": "ai", "tool": "codex_app", "op": "open"},
+             long_action={"type": "ai", "tool": "codex", "op": "open"}, style=codex),
+        Slot(label="OpenCode", icon="code-xml", action={"type": "ai", "tool": "opencode", "op": "open"},
+             style=opencode),
+        usage("codex", "usage_5h", codex, "Codex 5h"),
+        Slot(label=_t(lang, "clear"), icon="bell-off", action={"type": "ai", "tool": "all", "op": "ack"},
+             style=SLATE),
+    ]
+    p.zones = [
+        usage("claude", "tokens_today", claude, "Claude"),
+        Slot(label=_t(lang, "focus"), widget=w("pomodoro", minutes=50), long_action={"type": "timer", "op": "reset"},
+             style=st("#2a1240", "#12081c", "#c084fc")),
+        Slot(widget=w("clock", format="24h", date=True), style=st("#111827", "#1f2937")),
+        Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
+    ]
+    p.knobs = [
+        Knob(left={"type": "volume", "op": "down", "step": 2}, right={"type": "volume", "op": "up", "step": 2},
+             press={"type": "volume", "op": "mute"}),
+        Knob(left={"type": "scroll", "steps": 3}, right={"type": "scroll", "steps": -3},
+             press={"type": "ai", "tool": "all", "op": "ack"}),
+        Knob(left={"type": "media", "op": "prevtrack"}, right={"type": "media", "op": "nexttrack"},
+             press={"type": "media", "op": "playpause"}),
+        _nav("ai"),
+    ]
+    return p
+
+
+NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "beamng": beamng})
+NEW_RULES = [{"process": "eurotrucks2.exe", "page": "ets2"}, {"process": "amtrucks.exe", "page": "ets2"},
+             {"process": "BeamNG.drive.x64.exe", "page": "beamng"}]

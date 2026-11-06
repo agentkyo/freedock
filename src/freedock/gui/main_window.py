@@ -26,7 +26,7 @@ from ..profile import Page, Profile, Slot
 from ..render.painter import icon_image, load_fonts
 from ..settings import Settings
 from .device_view import DeviceView
-from .editors import ColorButton, IconPicker, section
+from .editors import ColorButton, IconPicker, StyleDialog, StyleEditor, section
 from .inspector import Inspector
 from .theme import STYLE
 
@@ -152,6 +152,69 @@ class SettingsDialog(QDialog):
         f3.addRow("SimConnect.dll", self.sc_path)
         tabs.addTab(integ, tr("ui.integrations"))
 
+        # Theme: edits profile.theme live so the deck previews it; Cancel restores the old one
+        from PySide6.QtWidgets import QScrollArea
+        self._theme_backup = copy.deepcopy(prof.theme)
+        theme_box = QWidget()
+        tl = QVBoxLayout(theme_box)
+        hint = QLabel(tr("ui.theme_hint"))
+        hint.setWordWrap(True)
+        hint.setObjectName("muted")
+        tl.addWidget(hint)
+        theme_ed = StyleEditor(prof.theme, inherit_label=tr("style.default"))
+        theme_ed.changed.connect(lambda: win.engine._visuals.clear())
+        tl.addWidget(theme_ed)
+        tl.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(theme_box)
+        tabs.addTab(scroll, tr("ui.theme"))
+
+        notif = QWidget()
+        f4 = QFormLayout(notif)
+        n = s.notify or {}
+        self.n_banner = QCheckBox(tr("ui.notify_banner"))
+        self.n_banner.setChecked(bool(n.get("banner", True)))
+        f4.addRow("", self.n_banner)
+        self.n_lights = QCheckBox(tr("ui.notify_lights"))
+        self.n_lights.setChecked(bool(n.get("lights", True)))
+        f4.addRow("", self.n_lights)
+        self.n_port = QSpinBox()
+        self.n_port.setRange(0, 65535)
+        self.n_port.setValue(int(n.get("http_port", 47810) or 0))
+        self.n_port.setToolTip(tr("ui.notify_port_hint"))
+        f4.addRow(tr("ui.notify_port"), self.n_port)
+        how = QLabel(tr("ui.notify_how"))
+        how.setWordWrap(True)
+        how.setObjectName("muted")
+        how.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        f4.addRow(how)
+        f4.addRow(section(tr("ui.ai_bridges")))
+        for tool, name in (("claude", "Claude Code"), ("codex", "Codex"), ("opencode", "OpenCode")):
+            f4.addRow(name, self._bridge_row(tool))
+        f4.addRow(section(tr("ui.lighting")))
+        lc = s.lighting or {}
+        self.l_strip = QCheckBox(tr("ui.light_strip"))
+        self.l_strip.setChecked(bool(lc.get("strip", True)))
+        f4.addRow("", self.l_strip)
+        self.l_count = QSpinBox()
+        self.l_count.setRange(1, 253)
+        self.l_count.setValue(int(lc.get("strip_count", 71)))
+        f4.addRow(tr("ui.light_count"), self.l_count)
+        self.l_chroma = QCheckBox(tr("ui.light_chroma"))
+        self.l_chroma.setChecked(bool(lc.get("chroma", True)))
+        f4.addRow("", self.l_chroma)
+        test = QPushButton(tr("ui.light_test"))
+        test.clicked.connect(self._light_test)
+        self.l_status = QLabel("")
+        self.l_status.setObjectName("muted")
+        row = QHBoxLayout()
+        row.addWidget(test)
+        row.addWidget(self.l_status, 1)
+        f4.addRow("", row)
+        self.notify_form = f4
+        tabs.addTab(notif, tr("ui.notifications"))
+
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -179,6 +242,61 @@ class SettingsDialog(QDialog):
         self.city.setText(f"{res['name']}")
         self.coords.setText(self._coords_text(self._lat, self._lon) + f" · {res.get('country', '')}")
 
+    def _bridge_row(self, tool: str) -> QWidget:
+        from ..integrations import ai_setup
+        box = QWidget()
+        h = QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0)
+        state = QLabel()
+        btn = QPushButton()
+
+        def refresh():
+            on = getattr(ai_setup, f"{tool}_installed")()
+            state.setText("● " + tr("ui.bridge_on") if on else "○ " + tr("ui.bridge_off"))
+            state.setStyleSheet(f"color: {'#22c55e' if on else '#8a93a6'}")
+            btn.setText(tr("ui.remove") if on else tr("ui.install"))
+
+        def toggle():
+            from ..cli import launch_command
+            s = self.win.settings
+            try:
+                if getattr(ai_setup, f"{tool}_installed")():
+                    if tool == "claude":
+                        ai_setup.claude_remove((s.ai or {}).get("claude_statusline_previous"))
+                    else:
+                        getattr(ai_setup, f"{tool}_remove")()
+                else:
+                    if tool == "claude":
+                        prev = ai_setup.claude_install(launch_command())
+                        if prev:
+                            s.ai = {**(s.ai or {}), "claude_statusline_previous": prev}
+                            s.save()
+                    else:
+                        getattr(ai_setup, f"{tool}_install")(launch_command())
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, APP_NAME, str(exc))
+            refresh()
+
+        btn.clicked.connect(toggle)
+        refresh()
+        h.addWidget(state, 1)
+        h.addWidget(btn)
+        return box
+
+    def _light_test(self) -> None:
+        from ..integrations.lighting import lights
+        lights.configure(strip_enabled=self.l_strip.isChecked(), strip_count=self.l_count.value(),
+                         chroma_enabled=self.l_chroma.isChecked())
+        lights.flash((91, 140, 255), times=3)
+        QTimer.singleShot(1500, lambda: self.l_status.setText(
+            " · ".join(f"{k}: {v}" for k, v in lights.status().items())))
+
+    def reject(self) -> None:
+        self.win.profile.theme.clear()
+        self.win.profile.theme.update(self._theme_backup)
+        self.win.engine._visuals.clear()
+        super().reject()
+
     def apply(self) -> bool:
         s, prof = self.win.settings, self.win.profile
         lang_changed = self.lang.currentData() != s.language
@@ -188,6 +306,10 @@ class SettingsDialog(QDialog):
         s.obs = {"host": self.obs_host.text().strip(), "port": self.obs_port.value(), "password": self.obs_pass.text()}
         s.assetto_controls = self.ac_path.text().strip()
         s.simconnect_dll = self.sc_path.text().strip()
+        s.notify = {**(s.notify or {}), "banner": self.n_banner.isChecked(), "lights": self.n_lights.isChecked(),
+                    "http_port": self.n_port.value()}
+        s.lighting = {**(s.lighting or {}), "strip": self.l_strip.isChecked(), "strip_count": self.l_count.value(),
+                      "chroma": self.l_chroma.isChecked()}
         s.save()
         prof.animations = self.anim.isChecked()
         prof.idle_minutes = self.idle.value()
@@ -242,6 +364,9 @@ class PagePanel(QWidget):
             self.platform.addItem(tr(label), v)
         self.platform.currentIndexChanged.connect(self._platform)
         form.addRow(tr("ui.platform"), self.platform)
+        looks = QPushButton(tr("ui.page_looks"))
+        looks.clicked.connect(self._page_looks)
+        form.addRow(tr("ui.looks"), looks)
         self.shift = QCheckBox(tr("ui.shift_lights"))
         self.shift.toggled.connect(self._shift)
         form.addRow("", self.shift)
@@ -325,6 +450,9 @@ class PagePanel(QWidget):
         combo.currentIndexChanged.connect(self._save_rules)
         self.rules.setCellWidget(row, 1, combo)
         self.rules.itemChanged.connect(self._save_rules)
+
+    def _page_looks(self) -> None:
+        StyleDialog(self, tr("ui.page_looks") + " - " + self.win.page.name, self.win.page.style, self.win.changed).exec()
 
     def _save_rules(self, *_):
         rules = []
@@ -715,7 +843,9 @@ def run_gui(app: QApplication, profile: Profile, settings: Settings, minimized: 
     engine = Engine(profile, settings)
     win = MainWindow(engine, profile, settings)
     from ..cli import serve_instance
-    win._instance_server = serve_instance({"show": win._show, "quit": win.quit, "ping": lambda: None})
+    from ..cli import _deliver_notify
+    win._instance_server = serve_instance({"show": win._show, "quit": win.quit, "ping": lambda: None,
+                                           "notify": lambda arg: _deliver_notify(engine, arg)})
     engine.start()
     import signal
     signal.signal(signal.SIGINT, lambda *a: win.quit())
