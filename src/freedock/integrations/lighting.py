@@ -938,6 +938,9 @@ class Lights:
         self.chroma_enabled = True
         self.strip_count = 71
         self._lock = threading.Lock()
+        self._scene_strip = False       # scene() is driving the strip / Chroma
+        self._scene_chroma = False
+        self._scene_glow: dict | None = None
 
     # -- backends, created on first use so importing this module starts nothing
 
@@ -1010,6 +1013,47 @@ class Lights:
                 strip.effect(name_or_index)
             except ValueError as exc:
                 log.warning("lighting: %s", exc)
+
+    # -- scenes: whole frames from integrations.game_lights
+
+    def scene(self, keyboard: Sequence[Sequence[Iterable[int]]] | None, strip: Sequence[Color] | None,
+              glow: Iterable[int] | None, devices: Iterable[str] = ("mouse", "mousepad", "headset", "chromalink")
+              ) -> None:
+        """One animation frame. keyboard: 6x22 RGB grid; strip: one color per LED; glow: the other Chroma
+        devices. None = leave that light alone (a strip left alone goes back to the user's own mode)."""
+        strip_dev, chroma = self._targets("all")
+        if strip_dev is not None:
+            if strip is not None:
+                strip_dev.leds(strip)
+                self._scene_strip = True
+            elif self._scene_strip:
+                strip_dev.restore()
+                self._scene_strip = False
+        if chroma is not None:
+            if keyboard is not None:
+                chroma.keyboard([[bgr(c) for c in row] for row in keyboard])
+                self._scene_chroma = True
+            if glow is not None:
+                body = static_body(glow)
+                last = self._scene_glow
+                if last != body:                  # the other devices only when their color changes
+                    for device in devices:
+                        chroma.set(device, body)
+                    self._scene_glow = body
+                self._scene_chroma = True
+            elif keyboard is None and self._scene_chroma:
+                chroma.release()
+                self._scene_chroma = False
+                self._scene_glow = None
+
+    def end_scene(self) -> None:
+        """Hand back whatever scene() was driving."""
+        if self._scene_strip and self._strip is not None:
+            self._strip.restore()
+        if self._scene_chroma and self._chroma is not None:
+            self._chroma.release()
+        self._scene_strip = self._scene_chroma = False
+        self._scene_glow = None
 
     def restore(self, target: Target = "all") -> None:
         """Back to the user's own lighting: the tray's saved mode, Synapse's effects."""

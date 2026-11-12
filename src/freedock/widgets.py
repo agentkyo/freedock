@@ -605,6 +605,103 @@ def _beamng(e, s, c, v):
     return v
 
 
+# --------------------------------------------------------------------------- Counter-Strike 2
+CS2_METRICS = tuple((m, f"cs2.{m}") for m in (
+    "bomb", "health", "armor", "money", "kills", "score", "weapon", "round", "map", "kda"))
+CS2_TEAM = {"CT": "#5d79ae", "T": "#de9b35"}
+
+
+def _cs2(e, s, c, v):
+    d = e.cs2()
+    m = c.get("metric", "bomb")
+    if not d.get("connected"):
+        return v.with_(value="CS2", sub=tr("cs2.waiting"), label="", icon=v.icon or "crosshair", dim=0.45)
+    if not d.get("in_match"):
+        return v.with_(value=tr("cs2.menu"), sub="CS2", label="", icon=v.icon or "crosshair", dim=0.3)
+    team = d.get("team") or d.get("player_team")
+    tc = CS2_TEAM.get(team, v.accent)
+    dead = not d.get("alive", True) or d.get("spectating")
+    if m == "bomb":
+        left = d.get("bomb_left")
+        if d.get("bomb") == "planted" and left is not None:
+            total = d.get("bomb_total") or 40.0
+            ok = d.get("can_defuse")
+            if d.get("defusing") and d.get("defuse_left") is not None:
+                sub = tr("cs2.defusing", t=f"{d['defuse_left']:.1f}")
+            elif team == "CT":
+                sub = tr("cs2.kit_ok" if d.get("defusekit") and ok else "cs2.defuse_ok" if ok else "cs2.no_time")
+            else:
+                sub = tr("cs2.they_can" if ok else "cs2.no_time")
+            return v.with_(value=f"{left:04.1f}" if left < 10 else f"{left:.0f}", sub=sub, mono=True, label="",
+                           icon="bomb", progress=left / total, progress_style="bar",
+                           accent="#22c55e" if ok else "#ef4444", active=True,
+                           anim="alert" if left < 10 else "pulse")
+        if d.get("bomb") in ("defused", "exploded"):
+            boom = d["bomb"] == "exploded"
+            return v.with_(value=tr(f"cs2.{d['bomb']}"), sub="C4", label="", icon="bomb",
+                           accent="#f97316" if boom else "#3b82f6", active=True)
+        phase = d.get("round_phase") or ""
+        return v.with_(value="C4", sub=tr(f"cs2.phase.{phase}") if phase else "", label="", icon="bomb", dim=0.35)
+    if m == "health":
+        hp = d.get("health") or 0
+        if dead:
+            return v.with_(value="✝", sub=tr("cs2.dead"), label="", icon=v.icon or "skull", dim=0.4)
+        low = hp < 30
+        return v.with_(value=str(hp), sub="HP", mono=True, label="", icon=v.icon or "heart-pulse",
+                       progress=e.smooth(s, "hp", hp / 100, 0.35), progress_style="bar",
+                       accent="#ef4444" if low else "#f59e0b" if hp < 60 else "#22c55e",
+                       anim="heartbeat" if low and hp > 0 else None, active=low)
+    if m == "armor":
+        ar = d.get("armor") or 0
+        return v.with_(value=str(ar), sub=tr("cs2.helmet") if d.get("helmet") else tr("cs2.armor"), mono=True,
+                       label="", icon=v.icon or "shield", progress=ar / 100, progress_style="bar", accent="#38bdf8",
+                       dim=0.4 if dead else 0.0)
+    if m == "money":
+        money = d.get("money")
+        return v.with_(value=f"${money:,}" if money is not None else "--", sub=tr("cs2.money"), mono=True, label="",
+                       icon=v.icon or "coins", accent="#22c55e",
+                       anim="glow" if d.get("round_phase") == "freezetime" else None)
+    if m == "kills":
+        rk = d.get("round_kills") or 0
+        hs = d.get("round_hs") or 0
+        return v.with_(value=str(rk), sub=tr("cs2.round_kills") + (f" · {hs} HS" if hs else ""), mono=True, label="",
+                       icon=v.icon or "crosshair", accent="#facc15" if rk >= 3 else tc, active=rk >= 3,
+                       anim="sparkle" if rk >= 4 else None)
+    if m == "kda":
+        k, a, dth = d.get("kills"), d.get("assists"), d.get("deaths")
+        if k is None:
+            return v.with_(value="--", sub="K/A/D", mono=True, label="", icon=v.icon or "swords")
+        return v.with_(value=f"{k}/{a or 0}/{dth or 0}", sub=f"MVP {d.get('mvps') or 0}", mono=True, label="",
+                       icon=v.icon or "swords", accent=tc)
+    if m == "score":
+        ct, t = d.get("score_ct") or 0, d.get("score_t") or 0
+        mine, theirs = (ct, t) if team == "CT" else (t, ct)
+        lead = "#22c55e" if mine > theirs else "#ef4444" if mine < theirs else v.accent
+        return v.with_(value=f"{mine} : {theirs}", sub=tr("cs2.round_n", n=(d.get("round") or 0) + 1), mono=True,
+                       label="", icon=v.icon or "trophy", accent=lead)
+    if m == "weapon":
+        ammo, amax = d.get("ammo"), d.get("ammo_max")
+        if ammo is None or not amax:
+            return v.with_(value=d.get("weapon") or "--", sub="", label="", icon=v.icon or "crosshair", accent=tc)
+        low = ammo <= max(1, amax // 4)
+        return v.with_(value=f"{ammo}/{d.get('reserve') or 0}", sub=d.get("weapon") or "", mono=True, label="",
+                       icon=v.icon or "crosshair", progress=ammo / amax, progress_style="bar",
+                       accent="#ef4444" if low else tc, anim="pulse" if low else None)
+    if m == "round":
+        phase = d.get("round_phase") or ""
+        return v.with_(value=tr(f"cs2.phase.{phase}") if phase else "--",
+                       sub=tr("cs2.round_n", n=(d.get("round") or 0) + 1), label="", icon=v.icon or "timer",
+                       accent=tc)
+    if m == "map":
+        name = (d.get("map") or "").removeprefix("de_").removeprefix("cs_").title()
+        return v.with_(value=name or "--", sub=(d.get("mode") or "").title(), label="", icon=v.icon or "map",
+                       accent=tc)
+    return v
+
+
+widget("cs2", "games", "crosshair", Field("metric", "choice", "bomb", CS2_METRICS), needs=("cs2",))(_cs2)
+
+
 def default_for(widget_id: str) -> dict[str, Any]:
     w = WIDGETS[widget_id]
     return {"type": widget_id, **{f.name: f.default for f in w.fields}}

@@ -582,6 +582,41 @@ def sounds_page(lang: str) -> Page:
     return p
 
 
-NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "ets2_trip": ets2_trip, "beamng": beamng, "sounds": sounds_page})
+# --------------------------------------------------------------------------- pages added in 0.4
+L.update({"cs2": {"en": "Counter-Strike 2", "pt": "Counter-Strike 2", "es": "Counter-Strike 2"}})
+
+
+def cs2_page(lang: str) -> Page:
+    """Live round info from CS2's game state integration; the strip and keyboard follow the round."""
+    p = Page(id="cs2", name=_t(lang, "cs2"), icon="crosshair", accent="#de9b35", style={"change": "zoom"})
+    dark = st("#06101c", "#0b1626", "#de9b35")
+
+    def cs(metric, style=dark):
+        return Slot(widget=w("cs2", metric=metric), style=style)
+
+    p.keys = [
+        cs("bomb", st("#1a0505", "#0a0202", "#ef4444")), cs("health", st("#0f1a0f", "#060c06", "#22c55e")),
+        cs("armor", st("#06182a", "#030c15", "#38bdf8")), cs("weapon"), cs("kills", st("#1a1405", "#0d0a02", "#facc15")),
+        cs("money", st("#0a1f14", "#050f0a", "#22c55e")), cs("score"), cs("kda"), cs("round"), cs("map"),
+    ]
+    p.zones = [
+        audio_output_zone(),
+        Slot(widget=w("volume"), style=st("#14213d", "#0a1020")),
+        Slot(widget=w("mic"), style=st("#1c1917", "#0c0a09")),
+        Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
+    ]
+    p.knobs = [
+        audio_output_knob(),
+        Knob(left={"type": "volume", "op": "down", "step": 2}, right={"type": "volume", "op": "up", "step": 2},
+             press={"type": "volume", "op": "mute"}),
+        Knob(left={"type": "mic", "op": "down", "step": 2}, right={"type": "mic", "op": "up", "step": 2},
+             press={"type": "mic", "op": "toggle"}),
+        _nav("cs2"),
+    ]
+    return p
+
+
+NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "ets2_trip": ets2_trip, "beamng": beamng, "sounds": sounds_page,
+                  "cs2": cs2_page})
 NEW_RULES = [{"process": "eurotrucks2.exe", "page": "ets2"}, {"process": "amtrucks.exe", "page": "ets2"},
-             {"process": "BeamNG.drive.x64.exe", "page": "beamng"}]
+             {"process": "BeamNG.drive.x64.exe", "page": "beamng"}, {"process": "cs2.exe", "page": "cs2"}]

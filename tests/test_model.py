@@ -18,7 +18,8 @@ def test_parse_combo():
 def test_default_profile_round_trip():
     for lang in ("en", "pt", "es"):
         prof = build_default_profile(lang)
-        assert [p.id for p in prof.pages] == ["daily", "windows", "assetto", "msfs", "msfs2", "ai", "ets2", "ets2_trip", "beamng", "sounds"]
+        assert [p.id for p in prof.pages] == ["daily", "windows", "assetto", "msfs", "msfs2", "ai", "ets2", "ets2_trip", "beamng", "sounds",
+                                              "cs2"]
         again = Profile.from_dict(json.loads(json.dumps(prof.to_dict())))
         assert again.to_dict() == prof.to_dict()
         for p in again.pages:

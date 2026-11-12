@@ -153,6 +153,7 @@ class Engine(QObject):
         self.notify_center = NotifyCenter()
         self.attention_hooks: list = []          # callables(source, event, message) - lights, sounds...
         self._rgb_active = False
+        self.game_lights = None                  # integrations.game_lights.GameLights, with the lights
         self._http = HttpBridge(self, int((settings.notify or {}).get("http_port") or 0))
         self._swallow_up: int | None = None
         self._boot_t0: float = -1.0
@@ -206,10 +207,15 @@ class Engine(QObject):
         if "lights" in self._started:
             try:
                 from .integrations.lighting import lights
+                if self.game_lights is not None:
+                    self.game_lights.shutdown()
                 lights.restore()
                 lights.shutdown()
             except Exception:  # noqa: BLE001
                 log.exception("lights shutdown")
+        if "cs2" in self._started:
+            from .integrations.cs2 import telemetry as cs2
+            cs2.stop()
         self._tick.stop()
         self._auto.stop()
         self._watcher.stop()
@@ -739,7 +745,7 @@ class Engine(QObject):
                 needs.add("assetto")
             if "rgb_shift_lights" in page.effects:
                 needs.update(("lights", "assetto", "ets2", "beamng"))
-        if (self.settings.notify or {}).get("lights", True):
+        if (self.settings.notify or {}).get("lights", True) or (self.settings.game_lights or {}).get("enabled", True):
             needs.add("lights")
         if "stats" in needs and "stats" not in self._started:
             from .integrations.system_stats import stats
@@ -757,6 +763,10 @@ class Engine(QObject):
                 importlib.import_module(f".integrations.{game}", __package__).telemetry.start()
         if "lights" in needs and "lights" not in self._started:
             self._start_lights()
+        elif "lights" in self._started and self.game_lights is not None:
+            self.game_lights.configure(self.settings.game_lights)
+        if "cs2" in needs and "cs2" not in self._started:
+            self._start_cs2()
         if "sound" in needs and "sound" not in self._started and not os.environ.get("FREEDOCK_NO_AUDIO"):
             self._started.add("sound")
             threading.Thread(target=self._start_soundboard, name="soundboard-init", daemon=True).start()
@@ -794,6 +804,15 @@ class Engine(QObject):
         if self._idle_triggered and (self._screensaver or self._asleep):
             self._wake()
 
+    def _detect_game(self, running: set[str]) -> None:
+        try:
+            fg = osb.foreground_process()
+        except Exception:  # noqa: BLE001
+            fg = None
+        theme = self.game_lights.set_games(running, fg)
+        if theme is not None and theme.id in ("cs2", "ets2"):
+            self._start_game_telemetry(theme.id)
+
     def _auto_switch(self) -> None:
         rules = [r for r in self.profile.auto_switch if r.get("process") and self.profile.page(r.get("page"))]
         try:
@@ -802,6 +821,8 @@ class Engine(QObject):
             running = None
         known = {r.get("process", "").lower() for r in self.profile.auto_switch} | set(GAME_PROCESSES)
         self._keep_awake_for_games(bool(running and known & running) or self._game_telemetry_live())
+        if running is not None and self.game_lights is not None:
+            self._detect_game(running)
         if not rules or running is None:
             return
         hit = next((r for r in rules if r["process"].lower() in running), None)
@@ -1024,6 +1045,52 @@ class Engine(QObject):
                          chroma_enabled=bool(cfg.get("chroma", True)))
         if self._light_hook not in self.attention_hooks:
             self.attention_hooks.append(self._light_hook)
+        if self.game_lights is None:
+            from .integrations.game_lights import GameLights
+            self.game_lights = GameLights(lights)
+        self.game_lights.configure(self.settings.game_lights)
+        if self.game_lights.enabled and "cs2" not in self._started and not os.environ.get("FREEDOCK_NO_GAMES"):
+            # CS2 sends its state only to files present when it starts: install ours as soon as possible
+            try:
+                from .integrations.cs2 import cfg_dirs
+                if cfg_dirs():
+                    self._start_cs2()
+            except Exception:  # noqa: BLE001
+                log.exception("cs2 setup")
+
+    def _start_cs2(self) -> None:
+        from .integrations.cs2 import GSI_PORT, new_token, telemetry
+        cfg = self.settings.cs2 = {"port": GSI_PORT, "token": "", **(self.settings.cs2 or {})}
+        if os.environ.get("FREEDOCK_NO_GAMES"):
+            self._started.add("cs2")
+            return
+        if not cfg.get("token"):
+            cfg["token"] = new_token()
+            try:
+                self.settings.save()
+            except OSError:
+                log.warning("could not save the CS2 token")
+        telemetry.configure(cfg.get("port"), cfg["token"])
+        telemetry.start()
+        self._started.add("cs2")
+        if telemetry.installed:
+            self.call_in_ui(lambda: self.toast.emit(tr("cs2.installed")))
+
+    def _start_game_telemetry(self, name: str) -> None:
+        """A theme needs a game's data (truck blinkers, CS2): start that integration once."""
+        if name in self._started:
+            return
+        if name == "cs2":
+            self._start_cs2()
+            return
+        if name in ("ets2", "beamng", "assetto"):
+            import importlib
+            importlib.import_module(f".integrations.{name}", __package__).telemetry.start()
+            self._started.add(name)
+
+    def cs2(self) -> dict:
+        from .integrations.cs2 import telemetry
+        return telemetry.data
 
     def _light_hook(self, src: str, event: str, message: str) -> None:
         if not (self.settings.notify or {}).get("lights", True):
@@ -1033,31 +1100,37 @@ class Engine(QObject):
         lights.flash((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)), times=3)
         self._rgb_pause_until = time.monotonic() + 1.2      # let the flash play before shift lights resume
 
+    def _shift_frac(self) -> float | None:
+        """Rev bar fill 0..1 while a racing page with the "rgb_shift_lights" effect is open."""
+        if "rgb_shift_lights" not in self.page.effects:
+            return None
+        for name, get in (("assetto", self.assetto), ("ets2", self.ets2), ("beamng", self.beamng)):
+            if name not in self._started:
+                continue
+            try:
+                d = get()
+            except Exception:  # noqa: BLE001 - an integration that never started
+                continue
+            if d.get("connected") and d.get("rpm") is not None:
+                top = d.get("max_rpm") or (2500 if name == "ets2" else 7500)
+                return round(max(0.0, min(1.0, (d["rpm"] / top - 0.55) / 0.42)), 3)
+        return None
+
     def _rgb_shift_lights(self, now: float) -> None:
-        """Rev bar on the LED strip / keyboard while a racing page with the effect is open."""
-        on = "rgb_shift_lights" in self.page.effects
-        frac = None
-        if on:
-            for get in (self.assetto, self.ets2, self.beamng):
-                try:
-                    d = get()
-                except Exception:  # noqa: BLE001 - an integration that never started
-                    continue
-                if d.get("connected") and d.get("rpm") is not None:
-                    top = d.get("max_rpm") or (2500 if get == self.ets2 else 7500)
-                    frac = max(0.0, min(1.0, (d["rpm"] / top - 0.55) / 0.42))
-                    break
-        from .integrations.lighting import lights
-        if frac is None:
-            if self._rgb_active:
-                lights.restore()
-                self._rgb_active = False
+        """Every light scene, each tick: game theme + live state + shift lights + event effects."""
+        gl = self.game_lights
+        if gl is None:
             return
-        if now < getattr(self, "_rgb_pause_until", 0) or now - getattr(self, "_rgb_last", 0) < 1 / 25:
-            return
-        self._rgb_last = now
-        self._rgb_active = True
-        lights.bar(round(frac, 3))
+        theme = gl.forced or gl.theme
+        truck = None
+        if theme is not None and theme.id == "ets2" and "ets2" in self._started:
+            truck = self.ets2()
+        cs2 = None
+        if "cs2" in self._started:
+            from .integrations.cs2 import telemetry as cs2
+        n = int((self.settings.lighting or {}).get("strip_count", 71))
+        self._rgb_active = gl.tick(now, shift=self._shift_frac(), n_leds=n, cs2=cs2, truck=truck,
+                                   paused=now < getattr(self, "_rgb_pause_until", 0))
 
     def ack_notify(self, src: str | None = None) -> None:
         self.notify_center.ack(src)

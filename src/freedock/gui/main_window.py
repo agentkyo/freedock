@@ -213,6 +213,19 @@ class SettingsDialog(QDialog):
         row.addWidget(test)
         row.addWidget(self.l_status, 1)
         f4.addRow("", row)
+        f4.addRow(section(tr("ui.game_lights")))
+        gc = s.game_lights or {}
+        self.g_on = QCheckBox(tr("ui.game_lights_on"))
+        self.g_on.setChecked(bool(gc.get("enabled", True)))
+        f4.addRow("", self.g_on)
+        self.g_strip = QComboBox()
+        for mode in ("events", "theme", "off"):
+            self.g_strip.addItem(tr(f"ui.game_strip.{mode}"), mode)
+        self.g_strip.setCurrentIndex(max(0, self.g_strip.findData(gc.get("strip", "events"))))
+        f4.addRow(tr("ui.game_strip"), self.g_strip)
+        self.g_native = QCheckBox(tr("ui.game_native"))
+        self.g_native.setChecked("*" in (gc.get("native_chroma") or []))
+        f4.addRow("", self.g_native)
         self.notify_form = f4
         tabs.addTab(notif, tr("ui.notifications"))
 
@@ -318,6 +331,10 @@ class SettingsDialog(QDialog):
                     "http_port": self.n_port.value()}
         s.lighting = {**(s.lighting or {}), "strip": self.l_strip.isChecked(), "strip_count": self.l_count.value(),
                       "chroma": self.l_chroma.isChecked()}
+        native = [t for t in ((s.game_lights or {}).get("native_chroma") or []) if t != "*"]
+        s.game_lights = {**(s.game_lights or {}), "enabled": self.g_on.isChecked(),
+                         "strip": self.g_strip.currentData(),
+                         "native_chroma": native + (["*"] if self.g_native.isChecked() else [])}
         self.sound_tab.apply()
         s.save()
         prof.animations = self.anim.isChecked()

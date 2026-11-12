@@ -305,15 +305,31 @@ def _ai(engine, a):
 LIGHT_TARGETS = (("all", "lights.all"), ("strip", "lights.strip"), ("chroma", "lights.chroma"))
 
 
+def _theme_choices() -> tuple:
+    from .integrations.scenes import THEMES
+    return tuple((tid, f"theme.{tid}") for tid in THEMES)
+
+
 @action("lights", "lights", "lightbulb",
         Field("op", "choice", "color", (("color", "lights.color"), ("flash", "lights.flash"),
-                                        ("effect", "lights.effect"), ("restore", "lights.restore"))),
-        Field("color", "color", "#5b8cff"), Field("effect", "int", 0), Field("target", "choice", "all", LIGHT_TARGETS))
+                                        ("effect", "lights.effect"), ("theme", "lights.theme"),
+                                        ("restore", "lights.restore"))),
+        Field("color", "color", "#5b8cff"), Field("effect", "int", 0), Field("target", "choice", "all", LIGHT_TARGETS),
+        Field("theme", "choice", "cs2", _theme_choices()))
 def _lights(engine, a):
     from .integrations.lighting import lights
     rgb = _rgb(a.get("color") or "#5b8cff")
     target = a.get("target", "all")
     op = a.get("op", "color")
+    gl = getattr(engine, "game_lights", None)
+    if op == "theme":
+        if gl is not None:
+            tid = a.get("theme", "cs2")
+            # toggles: the same theme again goes back to the game's own (or none)
+            engine.call_in_ui(lambda: gl.force(None if gl.forced and gl.forced.id == tid else tid))
+        return
+    if op == "restore" and gl is not None:
+        engine.call_in_ui(lambda: gl.force(None))
     if op == "flash":
         lights.flash(rgb, target=target)
     elif op == "effect":

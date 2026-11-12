@@ -89,7 +89,7 @@ def test_old_profiles_get_new_pages_once():
     prof = Profile.from_dict(data)
     assert add_new_presets(prof, "pt") is True
     ids = [p.id for p in prof.pages]
-    assert ids[-5:] == ["ai", "ets2", "ets2_trip", "beamng", "sounds"]
+    assert ids[-6:] == ["ai", "ets2", "ets2_trip", "beamng", "sounds", "cs2"]
     assert "rgb_shift_lights" in prof.page("assetto").effects
     assert any(r["process"] == "eurotrucks2.exe" for r in prof.auto_switch)
     # a page the user deleted later is not brought back

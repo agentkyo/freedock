@@ -33,6 +33,11 @@ class Settings:
     notify: dict[str, Any] = field(default_factory=lambda: {"banner": True, "lights": True, "http_port": 47810})
     ai: dict[str, Any] = field(default_factory=dict)   # claude_statusline_previous...
     lighting: dict[str, Any] = field(default_factory=lambda: {"strip": True, "strip_count": 71, "chroma": True})
+    # game lighting (integrations/game_lights.py): strip = events | theme | off; native_chroma = theme ids
+    # whose own Chroma effects keep the keyboard; off = theme ids never shown
+    game_lights: dict[str, Any] = field(default_factory=lambda: {
+        "enabled": True, "strip": "events", "native_chroma": [], "off": []})
+    cs2: dict[str, Any] = field(default_factory=lambda: {"port": 47812, "token": ""})
     soundboard: dict[str, Any] = field(default_factory=lambda: {
         "cable": "", "mic": "", "passthrough": True, "monitor": False, "monitor_volume": 0.6,
         "volume": 0.8, "mic_gain": 1.0})
