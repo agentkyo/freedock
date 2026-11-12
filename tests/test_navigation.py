@@ -76,3 +76,25 @@ def test_menu_draws_every_page():
     labels = [e._menu_visual(SlotRef(Kind.KEY, i)).label for i in range(len(e.visible_pages()))]
     assert labels == [p.name for p in e.visible_pages()]
     assert len(e.images) == 14
+
+
+def test_running_game_keeps_idle_screensaver_away():
+    """Wheels and yokes never touch the deck: a game in progress must count as activity."""
+    e = _engine()
+    e.profile.idle_minutes = 1
+    e._last_input = time.monotonic() - 120
+    e._on_tick()
+    assert e._screensaver and e._idle_triggered
+    e._keep_awake_for_games(True)               # a game (or live telemetry) shows up
+    assert not e._screensaver and time.monotonic() - e._last_input < 1
+    e._on_tick()
+    assert not e._screensaver
+
+
+def test_game_does_not_undo_a_sleep_the_user_asked_for():
+    e = _engine()
+    e.deck_op("sleep")
+    e._keep_awake_for_games(True)
+    assert e._asleep
+    e._keep_awake_for_games(False)
+    assert e._asleep

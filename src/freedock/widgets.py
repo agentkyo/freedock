@@ -405,11 +405,15 @@ def _ai(e, s, c, v):
 ETS2_METRICS = tuple((m, f"ets2.{m}") for m in (
     "speed", "gear", "rpm", "cruise", "fuel", "range", "damage", "job", "nav", "rest", "clock", "limit",
     "parking_brake", "lights_low", "lights_high", "beacon", "hazard", "engine_on", "diff_lock", "lift_axle",
-    "retarder", "trailer_attached", "wipers", "blinker_left", "blinker_right", "adblue"))
+    "retarder", "trailer_attached", "wipers", "blinker_left", "blinker_right", "adblue", "engine_brake",
+    "trip", "deadline", "compass", "fatigue"))
 ETS2_STATES = {"parking_brake": "#ef4444", "lights_low": "#22c55e", "lights_high": "#3b82f6", "beacon": "#f59e0b",
                "hazard": "#f97316", "engine_on": "#22c55e", "diff_lock": "#a855f7", "lift_axle": "#38bdf8",
                "trailer_attached": "#22c55e", "wipers": "#38bdf8", "blinker_left": "#22c55e",
-               "blinker_right": "#22c55e", "cruise_on": "#22c55e"}
+               "blinker_right": "#22c55e", "cruise_on": "#22c55e", "engine_brake": "#f59e0b"}
+
+
+FATIGUE_FULL_MIN = 660     # a full night's sleep in ETS2/ATS gives ~11 h of driving before the next rest
 
 
 def _fmt_min(minutes: float | None) -> str:
@@ -442,7 +446,7 @@ def _ets2(e, s, c, v):
                        icon=v.icon or "octagon-alert")
     if m == "gear":
         frac = (d.get("rpm") or 0) / max(1, d.get("max_rpm") or 2500)
-        return v.with_(value=str(d.get("gear", "N")), sub=f"{d.get('speed_kmh', 0):.0f} km/h", mono=True, label="",
+        return v.with_(value=str(d.get("gear", "N")), sub=f"{d.get('rpm') or 0:.0f} rpm", mono=True, label="",
                        progress=e.smooth(s, "rpm", frac, 0.5), progress_style="bar", accent=_load_color(frac))
     if m == "rpm":
         frac = (d.get("rpm") or 0) / max(1, d.get("max_rpm") or 2500)
@@ -455,7 +459,7 @@ def _ets2(e, s, c, v):
     if m == "fuel":
         cap = d.get("fuel_cap_l") or 1
         frac = (d.get("fuel_l") or 0) / cap
-        return v.with_(value=f"{d.get('fuel_l', 0):.0f} L", sub=tr("ets2.fuel"), mono=True, label="",
+        return v.with_(value=f"{frac * 100:.0f}%", sub=f"{d.get('fuel_l', 0):.0f} L", mono=True, label="",
                        progress=frac, progress_style="bar", accent=_load_color(1 - frac),
                        anim="pulse" if d.get("fuel_warning") else None)
     if m == "range":
@@ -477,11 +481,47 @@ def _ets2(e, s, c, v):
         km = d.get("nav_distance_km")
         return v.with_(value=f"{km:.0f} km" if km else "--", sub=_fmt_min(d.get("nav_time_min")), mono=True,
                        label="", icon=v.icon or "navigation")
+    if m == "trip":      # route advisor: km left, arrival clock, share of the job already driven
+        km = d.get("nav_distance_km")
+        if not km:
+            return v.with_(value="--", sub=tr("ets2.trip"), mono=True, label="", icon=v.icon or "navigation", dim=0.4)
+        eta = d.get("eta_clock")
+        near = km < 2
+        return v.with_(value=f"{km:.1f} km" if km < 10 else f"{km:.0f} km",
+                       sub=f"{_fmt_min(d.get('nav_time_min'))} · {eta.split()[-1]}" if eta else _fmt_min(
+                           d.get("nav_time_min")),
+                       mono=True, label="", icon=v.icon or "navigation", progress=d.get("trip_progress"),
+                       progress_style="bar", accent="#22c55e" if near else v.accent, anim="pulse" if near else None)
+    if m == "deadline":  # delivery deadline in game time; amber under 2 h, red and pulsing when late
+        job = d.get("job") or {}
+        left = job.get("deadline_min")
+        if left is None:
+            return v.with_(value="--", sub=tr("ets2.deadline"), mono=True, label="", icon=v.icon or "timer",
+                           dim=0.4)
+        late = left < 0
+        color = "#ef4444" if late else "#f59e0b" if left < 120 else "#22c55e"
+        return v.with_(value=("-" if late else "") + _fmt_min(abs(left)), sub=tr("ets2.late" if late else "ets2.deadline"),
+                       mono=True, label="", icon=v.icon or "timer", accent=color, active=late,
+                       anim="pulse" if late else None)
+    if m == "compass":
+        from .integrations.ets2 import compass
+        deg = d.get("heading_deg")
+        return v.with_(value=compass(deg), sub=f"{deg:.0f}°" if deg is not None else "", mono=True, label="",
+                       icon=v.icon or "compass")
     if m == "rest":
         mins = d.get("rest_stop_min")
         tired = mins is not None and mins < 60
         return v.with_(value=_fmt_min(mins), sub=tr("ets2.rest"), mono=True, label="", icon=v.icon or "bed",
                        accent="#f59e0b" if tired else v.accent, anim="pulse" if tired else None)
+    if m == "fatigue":   # driver tiredness from the time left until a rest stop is needed
+        mins = d.get("rest_stop_min")
+        if mins is None:
+            return v.with_(value="--", sub=tr("ets2.fatigue"), mono=True, label="", icon=v.icon or "bed", dim=0.4)
+        tired = max(0.0, min(1.0, 1 - mins / FATIGUE_FULL_MIN))
+        color = "#22c55e" if mins > 240 else "#facc15" if mins > 120 else "#f97316" if mins > 60 else "#ef4444"
+        return v.with_(value=f"{tired * 100:.0f}%", sub=_fmt_min(mins) if mins > 0 else tr("ets2.sleep_now"),
+                       mono=True, label="", icon=v.icon or "bed", progress=tired, progress_style="bar",
+                       accent=color, active=mins <= 60, anim="blink" if mins <= 0 else "pulse" if mins <= 60 else None)
     if m == "clock":
         return v.with_(value=str(d.get("game_clock") or "--"), sub=tr("ets2.clock"), mono=True, label="")
     if m == "retarder":

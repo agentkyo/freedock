@@ -27,3 +27,14 @@ def test_every_widget_field_has_a_default():
     for w in WIDGETS.values():
         for f in w.fields:
             assert f.default is not None or f.kind in ("text",), (w.id, f.name)
+
+
+def test_boot_animation_squares_timeline():
+    from freedock.render import boot
+    assert all(boot.key_state(i, 0.0)[1] == 0 for i in range(10))           # dark at start
+    assert all(boot.key_state(i, 1.3)[1] == 1 for i in range(10))           # every square lit
+    assert all(boot.key_state(i, boot.DURATION)[1] == 0 for i in range(10))  # gone before the page shows
+    first, last = boot.RING[0], boot.RING[-1]
+    assert boot.key_state(first, 0.2)[1] > 0 and boot.key_state(last, 0.2)[1] == 0   # chaser order
+    img = boot.key_tile(first, 1.0, (112, 112))
+    assert img.pixelColor(56, 56).blue() > 100 and img.pixelColor(2, 2).value() < 10

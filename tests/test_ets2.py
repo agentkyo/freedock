@@ -14,6 +14,7 @@ def _buf() -> bytearray:
     struct.pack_into("<I", b, 52, 2)                    # game = ATS
     struct.pack_into("<I", b, 64, 1440 + 14 * 60 + 5)   # Tue 14:05
     struct.pack_into("<I", b, 76, 4)                    # retarderStepCount
+    struct.pack_into("<I", b, 88, 1440 + 18 * 60)       # time_abs_delivery: Tue 18:00
     struct.pack_into("<I", b, 100, 352)                 # plannedDistanceKm
     struct.pack_into("<I", b, 108, 2)                   # retarderBrake
     struct.pack_into("<i", b, 500, 365)                 # restStop
@@ -36,6 +37,7 @@ def _buf() -> bytearray:
         b[off] = 1          # parkBrake electric engine blinkerL lowBeam beacon cruise diffLock onJob attached
     for off, s in ((2364, "Kenworth"), (2492, "W900"), (2620, "Lumber"), (2748, "Reno"), (3004, "Sacramento")):
         b[off:off + len(s)] = s.encode()
+    struct.pack_into("<d", b, 2224, 0.25)               # truck_dp.rotationX: heading west
     struct.pack_into("<Q", b, 4000, 18_450)             # jobIncome
     return b
 
@@ -54,9 +56,17 @@ def test_decode_synthetic_buffer():
     assert d["retarder"] == 2 and d["retarder_max"] == 4
     assert abs(d["truck_damage"] - 0.07) < 1e-6 and abs(d["cargo_damage"] - 0.015) < 1e-6
     assert d["job"] == {"cargo": "Lumber", "source_city": "Sacramento", "source_company": "",
-                        "dest_city": "Reno", "dest_company": "", "income": 18450, "planned_km": 352}
+                        "dest_city": "Reno", "dest_company": "", "income": 18450, "planned_km": 352,
+                        "deadline_min": 235}
     assert abs(d["nav_distance_km"] - 12.5) < 1e-6 and abs(d["nav_time_min"] - 10.0) < 1e-6
     assert d["rest_stop_min"] == 365 and d["game_clock"] == "Tue 14:05"
+    assert d["eta_clock"] == "Tue 14:15" and abs(d["trip_progress"] - (1 - 12.5 / 352)) < 1e-6
+    assert abs(d["heading_deg"] - 270.0) < 1e-6 and ets2.compass(d["heading_deg"]) == "W"
+
+
+def test_compass_labels():
+    assert [ets2.compass(x) for x in (0, 44, 46, 90, 180, 359, 337.6)] == ["N", "NE", "NE", "E", "S", "N", "N"]
+    assert ets2.compass(None) == "--"
 
 
 def test_decode_inactive_or_stale():

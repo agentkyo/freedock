@@ -39,7 +39,7 @@ OFF = {
     "sdkActive": 0, "paused": 4, "time": 8, "renderTime": 24,           # bool, bool, u64, u64
     "plugin_rev": 40, "game": 52,                                        # u32 (game: 1 ets2, 2 ats)
     "time_abs": 64,                                                      # u32 in-game minutes
-    "retarderStepCount": 76, "plannedDistanceKm": 100, "retarderBrake": 108,   # u32
+    "retarderStepCount": 76, "deliveryTime": 88, "plannedDistanceKm": 100, "retarderBrake": 108,   # u32
     "restStop": 500, "gearDashboard": 508,                               # s32
     "fuelCapacity": 704, "engineRpmMax": 740,                            # float (config)
     "speed": 948, "engineRpm": 952, "cruiseControlSpeed": 988, "fuel": 1000, "fuelRange": 1008,
@@ -52,6 +52,7 @@ OFF = {
     "lightsParking": 1582, "lightsBeamLow": 1583, "lightsBeamHigh": 1584, "lightsBeacon": 1585,
     "lightsHazard": 1588, "cruiseControl": 1589, "differentialLock": 1608, "liftAxle": 1609,
     "trailerLiftAxle": 1611,                                             # bool (truck_b)
+    "heading": 2224,                                                     # double truck_dp.rotationX
     "truckBrand": 2364, "truckName": 2492, "cargo": 2620, "cityDst": 2748, "compDst": 2876,
     "citySrc": 3004, "compSrc": 3132,                                    # char[64]
     "jobIncome": 4000,                                                   # u64
@@ -78,6 +79,10 @@ def _q(b: bytes, key: str) -> int:
     return struct.unpack_from("<Q", b, OFF[key])[0]
 
 
+def _d(b: bytes, key: str) -> float:
+    return struct.unpack_from("<d", b, OFF[key])[0]
+
+
 def _b(b: bytes, key: str) -> bool:
     return b[OFF[key]] != 0
 
@@ -99,6 +104,14 @@ def fmt_game_clock(minutes: int | None) -> str | None:
     return f"{_DAYS[(minutes // 1440) % 7]} {minutes % 1440 // 60:02d}:{minutes % 60:02d}"
 
 
+_COMPASS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
+def compass(deg: float | None) -> str:
+    """Heading in degrees clockwise from north -> 8-point label."""
+    return "--" if deg is None else _COMPASS[int((deg % 360 + 22.5) // 45) % 8]
+
+
 def decode(b: bytes, stale: bool = False) -> dict:
     """Decode a raw ``scsTelemetryMap_t`` snapshot. Pure function (tests feed it synthetic bytes)."""
     active = _b(b, "sdkActive")
@@ -109,10 +122,15 @@ def decode(b: bytes, stale: bool = False) -> dict:
     rest = _i(b, "restStop")
     tabs = _u(b, "time_abs")
     job = None
+    route_km = _f(b, "routeDistance") / 1000.0
+    route_min = _f(b, "routeTime") / 60.0
+    delivery = _u(b, "deliveryTime")
     if on_job:
         job = {"cargo": _s(b, "cargo"), "source_city": _s(b, "citySrc"), "source_company": _s(b, "compSrc"),
                "dest_city": _s(b, "cityDst"), "dest_company": _s(b, "compDst"), "income": _q(b, "jobIncome"),
-               "planned_km": planned or None}
+               "planned_km": planned or None,
+               # game minutes left until the delivery deadline (negative = late); None for no-deadline jobs
+               "deadline_min": delivery - tabs if delivery and tabs and delivery < 0xFFFFFFF0 else None}
     return {
         "connected": active and not stale,
         "paused": _b(b, "paused"),
@@ -144,8 +162,14 @@ def decode(b: bytes, stale: bool = False) -> dict:
         "truck_damage": max(_f(b, k) for k in _WEAR),
         "cargo_damage": _f(b, "cargoDamage"),
         "job": job,
-        "nav_distance_km": _f(b, "routeDistance") / 1000.0,
-        "nav_time_min": _f(b, "routeTime") / 60.0,
+        "nav_distance_km": route_km,
+        "nav_time_min": route_min,
+        # in-game clock when the route advisor expects us to arrive
+        "eta_clock": fmt_game_clock(tabs + int(route_min)) if tabs and route_km > 0 else None,
+        # 0..1 share of the planned job distance already driven
+        "trip_progress": max(0.0, min(1.0, 1 - route_km / planned)) if on_job and planned and route_km > 0 else None,
+        # SCS heading: 0 north, 0.25 west, 0.5 south (counter-clockwise) -> degrees clockwise from north
+        "heading_deg": (-_d(b, "heading") * 360.0) % 360.0,
         "rest_stop_min": rest if tabs else None,      # time_abs == 0: no profile loaded yet
         "game_time_min": tabs or None,
         "game_clock": fmt_game_clock(tabs) if tabs else None,
@@ -199,15 +223,18 @@ class Ets2Telemetry:
                 "rpm": 1150 + 60 * math.sin(t / 3), "max_rpm": 2500.0, "gear": "12",
                 "fuel_l": 612.0 - t * 0.05, "fuel_cap_l": 900.0, "fuel_range_km": 1890.0, "fuel_warning": False,
                 "adblue": 61.0, "adblue_warning": False, "air_warning": False, "speed_limit_kmh": 90.0,
-                "parking_brake": False, "engine_brake": False, "engine_on": True, "electric_on": True,
+                "parking_brake": False, "engine_on": True, "electric_on": True,
                 "lights_parking": True, "lights_low": True, "lights_high": False, "beacon": False, "hazard": False,
                 "blinker_left": int(t) % 20 < 3, "blinker_right": False,
                 "blinker_left_lamp": int(t) % 20 < 3 and int(t * 2) % 2 == 0, "blinker_right_lamp": False,
                 "wipers": False, "retarder": 0, "retarder_max": 4, "diff_lock": False, "lift_axle": False,
                 "trailer_lift_axle": False, "trailer_attached": True, "truck_damage": 0.03, "cargo_damage": 0.0,
                 "job": {"cargo": "Tractors", "source_city": "Berlin", "source_company": "Agrominta",
-                        "dest_city": "Praha", "dest_company": "Tradeaux", "income": 18450, "planned_km": 352},
+                        "dest_city": "Praha", "dest_company": "Tradeaux", "income": 18450, "planned_km": 352,
+                        "deadline_min": 410 - int(t / 3)},
                 "nav_distance_km": max(0.0, 287.4 - t * speed / 3600), "nav_time_min": 212.0,
+                "eta_clock": fmt_game_clock(gm + 212), "trip_progress": 1 - 287.4 / 352,
+                "heading_deg": (t * 6) % 360, "engine_brake": int(t) % 10 < 4,
                 "rest_stop_min": 365, "game_time_min": gm, "game_clock": fmt_game_clock(gm), "time": time.time(),
             }
             self._stop.wait(1 / 20)

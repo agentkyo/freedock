@@ -106,6 +106,10 @@ class Transition:
     old: dict[str, QImage] = field(default_factory=dict)
 
 
+# Games whose controllers never touch the deck: while one runs the idle screensaver stays away.
+GAME_PROCESSES = ("acs.exe", "acc.exe", "ac2-win64-shipping.exe", "flightsimulator.exe", "flightsimulator2024.exe",
+                  "eurotrucks2.exe", "amtrucks.exe", "beamng.drive.x64.exe", "x-plane.exe", "dirtrally2.exe",
+                  "f1_24.exe", "iracingsim64dx11.exe", "rfactor2.exe", "lmu.exe", "ams2avx.exe")
 IDLE_DIM = 0.5          # idle screen brightness, relative to the user's setting
 IDLE_DIM_MIN = 15
 
@@ -155,6 +159,7 @@ class Engine(QObject):
         self._last_input = time.monotonic()
         self._screensaver = False
         self._asleep = False
+        self._idle_triggered = False     # screensaver/sleep started by the idle timer (not by the user)
         self._mixer = None                       # soundboard, created when a page uses sounds
         self._no_cable_told = False
         self.audio: dict = {"level": None, "muted": None, "mic_muted": None}
@@ -260,7 +265,14 @@ class Engine(QObject):
         dev.set_brightness(self.profile.brightness)
         self._sent.clear()
         self._boot_t0 = time.monotonic() if self.profile.animations else -1.0
+        # Safety net: repaint everything once the link has settled. A panel that was handed back to its
+        # firmware (previous FreeDock quit) can drop the very first frames; we only resend what changes.
+        QTimer.singleShot(2500, self._repaint_all)
         self.device_changed.emit(dev.info.label + (f" · {dev.firmware}" if dev.firmware else ""))
+
+    def _repaint_all(self) -> None:
+        self._sent.clear()
+        self._visuals.clear()
 
     def _on_lost(self) -> None:
         self.device = None
@@ -504,6 +516,7 @@ class Engine(QObject):
             self._visuals.clear()
 
     def _wake(self) -> None:
+        self._idle_triggered = False
         if self._screensaver and self.device:
             self.device.set_brightness(self.profile.brightness)
         self._screensaver = False
@@ -729,13 +742,35 @@ class Engine(QObject):
         self._started |= needs
 
     # ================================================================== auto switch
+    def _game_telemetry_live(self) -> bool:
+        """True while a sim integration that is already running reports a connected game."""
+        for name in ("assetto", "ets2", "beamng"):
+            mod = sys.modules.get(f"{__package__}.integrations.{name}")
+            if name in self._started and mod and mod.telemetry.data.get("connected"):
+                return True
+        mod = sys.modules.get(f"{__package__}.integrations.msfs")
+        return bool("msfs" in self._started and mod and mod.sim.connected)
+
+    def _keep_awake_for_games(self, gaming: bool) -> None:
+        """Wheels, pedals and yokes never touch the deck, so a game in progress counts as activity.
+
+        Only an idle-triggered screensaver/sleep is undone; one the user asked for stays.
+        """
+        if not gaming:
+            return
+        self._last_input = time.monotonic()
+        if self._idle_triggered and (self._screensaver or self._asleep):
+            self._wake()
+
     def _auto_switch(self) -> None:
         rules = [r for r in self.profile.auto_switch if r.get("process") and self.profile.page(r.get("page"))]
-        if not rules:
-            return
         try:
             running = {(p.info.get("name") or "").lower() for p in psutil.process_iter(["name"])}
         except psutil.Error:
+            running = None
+        known = {r.get("process", "").lower() for r in self.profile.auto_switch} | set(GAME_PROCESSES)
+        self._keep_awake_for_games(bool(running and known & running) or self._game_telemetry_live())
+        if not rules or running is None:
             return
         hit = next((r for r in rules if r["process"].lower() in running), None)
         if hit:
@@ -880,6 +915,7 @@ class Engine(QObject):
                 self.deck_op("sleep")
             else:
                 self.deck_op("screensaver")
+            self._idle_triggered = True
         if "lights" in self._started:
             self._rgb_shift_lights(now)
         if self._asleep:
@@ -1147,34 +1183,20 @@ class Engine(QObject):
             self._output(f"key{i}", SlotRef(Kind.KEY, i), tile)
 
     def _draw_boot(self, now: float) -> bool:
-        t = (now - self._boot_t0) / 1.6
-        if t >= 1:
+        """Boot animation made of the keys themselves (see render/boot.py)."""
+        from .render import boot
+        t = now - self._boot_t0
+        if t >= boot.DURATION:
             self._boot_t0 = -1.0
             self._transition = Transition(now, 1, {})
             self._visuals.clear()
             return False
-
-        def paint(p: QPainter, w: int, h: int):
-            sweep = ease_in_out(min(1.0, t * 1.4)) * (w + 260) - 130
-            g = QLinearGradient(sweep - 220, 0, sweep + 60, h)
-            g.setColorAt(0, QColor(0, 0, 0))
-            g.setColorAt(0.6, QColor("#3b82f6"))
-            g.setColorAt(0.85, QColor("#a855f7"))
-            g.setColorAt(1, QColor(0, 0, 0))
-            p.fillRect(QRectF(0, 0, w, h), g)
-            f = QFont(UI_FONT)
-            f.setPixelSize(int(h * 0.36))
-            f.setWeight(QFont.Weight.Black)
-            p.setFont(f)
-            p.setOpacity(min(1.0, max(0.0, (t - 0.15) * 2.5)))
-            p.setPen(QColor("#ffffff"))
-            p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "FreeDock")
-
-        self._draw_canvas(paint)
+        for i in range(N4.key_count):
+            self._output(f"key{i}", SlotRef(Kind.KEY, i), boot.key_tile(i, t, N4.key_size))
+        zw, zh = N4.zone_size
+        strip = boot.strip_canvas(t, zw * N4.zone_count, zh)
         for i in range(N4.zone_count):
-            zt = max(0.0, min(1.0, (t - 0.1 * i) * 2))
-            v = Visual(bg="#000000", bg2="#1e3a8a" if zt > 0.5 else "#000000", accent="#a855f7")
-            self._output(f"zone{i}", SlotRef(Kind.ZONE, i), render(v, *N4.zone_size, Fx(flash=0.4 * (1 - zt))))
+            self._output(f"zone{i}", SlotRef(Kind.ZONE, i), strip.copy(i * zw, 0, zw, zh))
         return True
 
     def _draw_screensaver(self, now: float) -> None:

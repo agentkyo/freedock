@@ -8,12 +8,13 @@ import os
 import shlex
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QIcon, QImage, QPixmap
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMenu, QMessageBox, QPushButton, QSlider, QSpinBox, QSplitter,
@@ -611,6 +612,8 @@ class MainWindow(QMainWindow):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(400)
         self._save_timer.timeout.connect(self._save)
+        self.inspector.changed.connect(self.changed)      # key/zone/knob/page edits in the right panel
+        QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save_now)
 
         self.view.selected.connect(self.select)
         self.view.swapped.connect(self._swap)
@@ -624,6 +627,7 @@ class MainWindow(QMainWindow):
         self.pages.refresh(self.page.id)
         self.select("key0")
         self._device("")
+        self._save_state(dirty=False)
 
     # ----------------------------------------------------------------- chrome
     def _topbar(self) -> QWidget:
@@ -651,6 +655,10 @@ class MainWindow(QMainWindow):
         self.bright.valueChanged.connect(self._brightness)
         h.addWidget(self.bright)
         h.addSpacing(12)
+        self.save_btn = QPushButton(QIcon(QPixmap.fromImage(icon_image("save", "#ffffff", 18))), tr("ui.save"))
+        self.save_btn.setToolTip(tr("ui.save_tip"))
+        self.save_btn.clicked.connect(self.save_now)
+        h.addWidget(self.save_btn)
         for text, fn in ((tr("ui.import_streamdock"), self._import), (tr("ui.export"), self._export),
                          (tr("ui.import_profile"), self._import_profile), (tr("ui.settings"), self._settings)):
             b = QPushButton(text)
@@ -687,6 +695,8 @@ class MainWindow(QMainWindow):
             e.accept()
             return
         e.ignore()
+        if self._save_timer.isActive():         # hiding to the tray: never leave an edit pending
+            self.save_now()
         self.hide()
         self.tray.showMessage(APP_NAME, tr("ui.still_running"), QSystemTrayIcon.MessageIcon.Information, 2500)
 
@@ -740,15 +750,34 @@ class MainWindow(QMainWindow):
     def changed(self) -> None:
         """Called after any edit: the engine reads the profile directly, so just redraw + save soon."""
         self.engine._visuals.clear()
+        self._save_state(dirty=True)
         self._save_timer.start()
 
-    def _save(self) -> None:
+    def save_now(self) -> None:
+        self._save_timer.stop()
+        if self._save():
+            self.statusBar().showMessage(tr("ui.saved_at", t=time.strftime("%H:%M:%S")), 4000)
+
+    def _save_state(self, dirty: bool) -> None:
+        btn = getattr(self, "save_btn", None)
+        if btn is None:
+            return
+        btn.setText(tr("ui.save") + " •" if dirty else tr("ui.saved"))
+        btn.setObjectName("primary" if dirty else "")
+        btn.style().unpolish(btn)
+        btn.style().polish(btn)
+
+    def _save(self) -> bool:
         try:
             self.profile.save()
         except OSError as exc:
-            self.statusBar().showMessage(str(exc), 6000)
+            self.statusBar().showMessage(tr("ui.save_failed", e=str(exc)), 10000)
+            self._save_state(dirty=True)
+            return False
+        self._save_state(dirty=False)
         self.engine.reload()
         self._fill_tray_pages()
+        return True
 
     def _brightness(self, v: int) -> None:
         self.profile.brightness = v

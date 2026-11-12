@@ -338,6 +338,11 @@ L.update({
     "esc": {"en": "ESC / TC", "pt": "ESC / TC", "es": "ESC / TC"},
     "clear": {"en": "Clear alerts", "pt": "Limpar avisos", "es": "Borrar avisos"},
     "focus": {"en": "Focus", "pt": "Foco", "es": "Foco"},
+    "ets2_trip": {"en": "Truck trip", "pt": "Viagem", "es": "Viaje"},
+    "wipers": {"en": "Wipers", "pt": "Limpador", "es": "Limpiaparabrisas"},
+    "high_beam": {"en": "High beam", "pt": "Farol alto", "es": "Luz larga"},
+    "trailer": {"en": "Trailer", "pt": "Carreta", "es": "Remolque"},
+    "engine_brake": {"en": "Engine brake", "pt": "Freio motor", "es": "Freno motor"},
 })
 
 
@@ -358,39 +363,75 @@ PAGE_NAME_ZONE_STYLE = st("#1e1b4b", "#0b0a1f", "#818cf8")
 
 
 def ets2(lang: str) -> Page:
+    """Cab page: what you touch while driving. Blinkers flash in sync with the dashboard lamps."""
     p = Page(id="ets2", name=_t(lang, "ets2"), icon="truck", accent="#f59e0b", effects=["rgb_shift_lights"],
              style={"change": "slide"})
     dash = st("#0b0f19", "#151b2b", "#f59e0b")
     warm = st("#3a2a05", "#1a1302", "#facc15")
     p.keys = [
+        Slot(label=_t(lang, "wipers"), icon="droplets", action=e2("wipers"), long_action=e2("wipersback"),
+             widget=w("ets2", metric="wipers"), style=st("#0c1f2e", "#06101a", "#38bdf8")),
         Slot(widget=w("ets2", metric="speed"), action=e2("cruiectrl"), style=dash),
         Slot(widget=w("ets2", metric="gear"), style=st("#000000", "#111111", "#22c55e")),
         Slot(widget=w("ets2", metric="fuel"), style=dash),
-        Slot(widget=w("ets2", metric="job"), action=e2("navmap"), long_action=e2("attach"), style=dash),
-        Slot(widget=w("ets2", metric="rest"), style=dash),
+        Slot(widget=w("ets2", metric="fatigue"), action=e2("navmap"), style=dash),
         Slot(label=_t(lang, "engine"), icon="power", action=e2("engine"), long_action=e2("engineelect"),
              widget=w("ets2", metric="engine_on"), style=st("#14261a", "#08120c", "#22c55e")),
         Slot(label=_t(lang, "parking"), icon="circle-parking", action=e2("parkingbrake"),
              widget=w("ets2", metric="parking_brake"), style=st("#3a0d14", "#1a0609", "#ef4444")),
-        Slot(label=_t(lang, "headlights"), icon="lightbulb", action=e2("light"), long_action=e2("hblight"),
+        Slot(label=_t(lang, "headlights"), icon="lightbulb", action=e2("light"), long_action=e2("flasher4way"),
              widget=w("ets2", metric="lights_low"), style=warm),
-        Slot(label=_t(lang, "beacon"), icon="siren", action=e2("beacon"), widget=w("ets2", metric="beacon"),
-             style=warm),
-        Slot(label=_t(lang, "hazards"), icon="triangle-alert", action=e2("flasher4way"), long_action=e2("airhorn"),
-             widget=w("ets2", metric="hazard"), style=st("#3a1d05", "#1a0d02", "#f97316")),
+        Slot(label=_t(lang, "high_beam"), icon="sun", action=e2("hblight"), long_action=e2("lighthorn"),
+             widget=w("ets2", metric="lights_high"), style=st("#0c1a3a", "#060c1c", "#3b82f6")),
+        Slot(label=_t(lang, "trailer"), icon="link", action=e2("attach"),
+             widget=w("ets2", metric="trailer_attached"), style=st("#14261a", "#08120c", "#22c55e")),
     ]
     p.zones = [
         Slot(widget=w("ets2", metric="cruise"), action=e2("cruiectrl"), style=dash),
-        Slot(widget=w("ets2", metric="retarder"), action=e2("engbraketog"), style=dash),
-        Slot(label=_t(lang, "camera"), icon="camera", action=e2("camcycle"), long_action=e2("horn"), style=SLATE),
+        Slot(label=_t(lang, "engine_brake"), icon="gauge", widget=w("ets2", metric="engine_brake"),
+             action=e2("engbraketog"), style=dash),
+        Slot(widget=w("ets2", metric="trip"), action=e2("navmap"), style=dash),
         Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
     ]
-    p.knobs = [
+    p.knobs = _ets2_knobs()
+    return p
+
+
+def _ets2_knobs() -> list[Knob]:
+    return [
         Knob(left=e2("cruiectrldec"), right=e2("cruiectrlinc"), press=e2("cruiectrlres")),
         Knob(left=e2("retarderdown"), right=e2("retarderup"), press=e2("engbraketog")),
         Knob(left=e2("lookleft"), right=e2("lookright"), press=e2("camcycle")),
         _nav("ets2"),
     ]
+
+
+def ets2_trip(lang: str) -> Page:
+    """Trip page: the job, the route advisor and the driver - the SCS SDK has no turn-by-turn data."""
+    p = Page(id="ets2_trip", name=_t(lang, "ets2_trip"), icon="map", accent="#38bdf8", effects=["rgb_shift_lights"],
+             style={"change": "slide"})
+    dash = st("#0b0f19", "#151b2b", "#38bdf8")
+    p.keys = [
+        Slot(widget=w("ets2", metric="job"), action=e2("navmap"), style=dash),
+        Slot(widget=w("ets2", metric="deadline"), style=dash),
+        Slot(widget=w("ets2", metric="trip"), action=e2("advmouse"), style=dash),
+        Slot(widget=w("ets2", metric="compass"), style=dash),
+        Slot(widget=w("ets2", metric="clock"), style=dash),
+        Slot(widget=w("ets2", metric="adblue"), style=dash),
+        Slot(widget=w("ets2", metric="damage"), style=dash),
+        Slot(widget=w("ets2", metric="range"), style=dash),
+        Slot(label=_t(lang, "hazards"), icon="triangle-alert", action=e2("flasher4way"), long_action=e2("airhorn"),
+             widget=w("ets2", metric="hazard"), style=st("#3a1d05", "#1a0d02", "#f97316")),
+        Slot(label=_t(lang, "beacon"), icon="siren", action=e2("beacon"), widget=w("ets2", metric="beacon"),
+             style=st("#3a2a05", "#1a1302", "#facc15")),
+    ]
+    p.zones = [
+        Slot(widget=w("ets2", metric="limit"), style=dash),
+        Slot(widget=w("ets2", metric="retarder"), action=e2("engbraketog"), style=dash),
+        Slot(label=_t(lang, "camera"), icon="camera", action=e2("camcycle"), long_action=e2("horn"), style=SLATE),
+        Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
+    ]
+    p.knobs = _ets2_knobs()
     return p
 
 
@@ -515,6 +556,6 @@ def sounds_page(lang: str) -> Page:
     return p
 
 
-NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "beamng": beamng, "sounds": sounds_page})
+NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "ets2_trip": ets2_trip, "beamng": beamng, "sounds": sounds_page})
 NEW_RULES = [{"process": "eurotrucks2.exe", "page": "ets2"}, {"process": "amtrucks.exe", "page": "ets2"},
              {"process": "BeamNG.drive.x64.exe", "page": "beamng"}]

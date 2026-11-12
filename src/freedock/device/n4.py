@@ -65,8 +65,12 @@ class N4Device:
         self._alive = True
         self._lost_reported = False
         self.firmware = self._read_firmware()
+        # Claim the panel first: after a previous session handed it back to the firmware (CLE DC) the
+        # panel ignores images until it hears CONNECT - the keys stayed black until a replug.
+        self._send(protocol.heartbeat())
         self._resync()
         self._send(protocol.wake_screen())
+        self._send(protocol.heartbeat())
         self._threads = [
             threading.Thread(target=self._reader, name="n4-reader", daemon=True),
             threading.Thread(target=self._writer, name="n4-writer", daemon=True),
@@ -188,7 +192,7 @@ class N4Device:
                 log.exception("input handler failed")
 
     def _writer(self) -> None:
-        last_beat = 0.0
+        last_beat = time.monotonic()              # __init__ just sent one
         while self._alive:
             with self._cond:
                 if not self._pending and not self._pending_cmds:
