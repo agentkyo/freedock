@@ -159,6 +159,11 @@ def foreground_process() -> str | None:
 
 
 # ------------------------------------------------------------------------- audio
+PKEY_DEVICE_DESC = "{A45C254E-DF1C-4EFD-8020-67D146A850E0} 2"       # endpoint name ("Headphones")
+PKEY_INTERFACE_NAME = "{026E516E-B814-414B-83CD-856D6FEF4822} 2"    # adapter ("Realtek(R) Audio")
+OUTPUTS_REFRESH_S = 3.0
+
+
 class _AudioThread:
     """All CoreAudio (COM) work happens on this one thread.
 
@@ -171,6 +176,8 @@ class _AudioThread:
         import queue
         import threading
         self.state: dict = {"level": None, "muted": None, "mic_muted": None, "mic_level": None}
+        self.outputs: list = []                  # [audio_outputs.Output], refreshed every few seconds
+        self.default_output: str | None = None
         self._q: "queue.Queue" = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="coreaudio", daemon=True)
         self._thread.start()
@@ -223,12 +230,39 @@ class _AudioThread:
         if done:
             done(found)
 
+    @staticmethod
+    def _list_outputs() -> tuple[list, str | None]:
+        """Active playback endpoints and the default one's id (what Ctrl+Win+V lists)."""
+        import warnings
+        from pycaw.constants import DEVICE_STATE, EDataFlow, ERole
+        from pycaw.pycaw import AudioUtilities
+        from ..audio_outputs import Output
+        with warnings.catch_warnings():          # pycaw warns about unreadable properties
+            warnings.simplefilter("ignore")
+            devices = AudioUtilities.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
+        out = [Output(d.id, d.FriendlyName or d.id, str(d.properties.get(PKEY_DEVICE_DESC) or ""),
+                      str(d.properties.get(PKEY_INTERFACE_NAME) or "")) for d in devices if d is not None]
+        try:
+            default = AudioUtilities.GetDeviceEnumerator().GetDefaultAudioEndpoint(
+                EDataFlow.eRender.value, ERole.eMultimedia.value).GetId()
+        except Exception:  # noqa: BLE001 - no playback device at all
+            default = None
+        return out, default
+
+    @staticmethod
+    def _set_default_output(dev_id: str, comms: bool) -> None:
+        from pycaw.constants import ERole
+        from pycaw.pycaw import AudioUtilities
+        roles = [ERole.eConsole, ERole.eMultimedia] + ([ERole.eCommunications] if comms else [])
+        AudioUtilities.SetDefaultDevice(dev_id, roles)
+
     def _run(self) -> None:
         import queue
         import comtypes
         comtypes.CoInitialize()
         spk = mic = None
         refreshed = 0.0
+        listed = 0.0
         while True:
             try:
                 # re-resolve the default devices now and then so a new headset is picked up
@@ -236,10 +270,32 @@ class _AudioThread:
                     spk = mic = None
                     spk, mic = self._endpoints()
                     refreshed = time.monotonic()
+                if time.monotonic() - listed > OUTPUTS_REFRESH_S:
+                    self.outputs, self.default_output = self._list_outputs()
+                    listed = time.monotonic()
                 try:
                     name, args = self._q.get(timeout=0.4)
                 except queue.Empty:
                     name, args = None, ()
+                if name == "set_output":
+                    dev_id, comms, done = args
+                    try:
+                        self._set_default_output(dev_id, comms)
+                        ok = True
+                    except Exception as exc:  # noqa: BLE001 - device vanished, policy refused
+                        log.warning("cannot make %s the default output: %s", dev_id, exc)
+                        ok = False
+                    # volume / mute keys must follow the new device right away, not in 15 s
+                    spk = mic = None
+                    spk, mic = self._endpoints()
+                    refreshed = time.monotonic()
+                    self.outputs, self.default_output = self._list_outputs()
+                    listed = time.monotonic()
+                    if done:
+                        done(ok)
+                elif name == "list_outputs":
+                    self.outputs, self.default_output = self._list_outputs()
+                    listed = time.monotonic()
                 if name == "change" and spk:
                     spk.SetMasterVolumeLevelScalar(max(0.0, min(1.0, spk.GetMasterVolumeLevelScalar() + args[0])), None)
                 elif name == "set" and spk:
@@ -304,6 +360,26 @@ def mic_level() -> float | None:
 
 def change_mic_volume(step: float) -> None:
     _audio().post("mic_change", step)
+
+
+def audio_outputs() -> tuple[list, str | None]:
+    """([Output] of the active playback devices, id of the default one). Cached; never blocks."""
+    a = _audio()
+    return list(a.outputs), a.default_output
+
+
+def refresh_outputs() -> None:
+    _audio().post("list_outputs")
+
+
+def set_default_output(dev_id: str, comms: bool = False, timeout: float = 3.0) -> bool:
+    """Make a playback device the default (console + multimedia roles, like Ctrl+Win+V; comms=True
+    also moves calls/Discord's "default communication device"). Blocks until done; worker threads only."""
+    import threading
+    ev, res = threading.Event(), []
+    _audio().post("set_output", dev_id, comms, lambda ok: (res.append(ok), ev.set()))
+    ev.wait(timeout)
+    return bool(res and res[0])
 
 
 def set_capture_level(name_part: str, db: float = 0.0, timeout: float = 5.0) -> list[tuple[str, float]]:

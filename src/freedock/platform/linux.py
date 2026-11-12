@@ -229,3 +229,70 @@ def change_mic_volume(step: float) -> None:
 
 def set_capture_level(name_part: str, db: float = 0.0, timeout: float = 5.0) -> list:
     return []
+
+
+# ------------------------------------------------------------------------- playback devices
+def parse_pactl_sinks(text: str) -> list:
+    """`pactl list sinks` -> [Output(id=sink name, name=description)]."""
+    from ..audio_outputs import Output
+    out, name = [], None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("Name:"):
+            name = line.split(":", 1)[1].strip()
+        elif line.startswith("Description:") and name:
+            desc = line.split(":", 1)[1].strip()
+            out.append(Output(name, desc, desc, ""))
+            name = None
+    return out
+
+
+_outputs_cache: dict = {"at": -1e9, "list": [], "default": None, "busy": False}
+
+
+def _refresh_outputs() -> None:
+    try:
+        if not shutil.which("pactl"):
+            return
+        text = subprocess.run(["pactl", "list", "sinks"], capture_output=True, text=True, timeout=3,
+                              env={**os.environ, "LC_ALL": "C"}).stdout
+        default = subprocess.run(["pactl", "get-default-sink"], capture_output=True, text=True,
+                                 timeout=2).stdout.strip()
+        _outputs_cache.update(list=parse_pactl_sinks(text), default=default or None)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.debug("pactl: %s", exc)
+    finally:
+        _outputs_cache.update(at=time.monotonic(), busy=False)
+
+
+def refresh_outputs() -> None:
+    if _outputs_cache["busy"]:
+        return
+    import threading
+    _outputs_cache["busy"] = True
+    threading.Thread(target=_refresh_outputs, name="pactl-sinks", daemon=True).start()
+
+
+def audio_outputs() -> tuple[list, str | None]:
+    """([Output], default sink name). Cached; a stale cache is refreshed in the background."""
+    if time.monotonic() - _outputs_cache["at"] > 3.0:
+        refresh_outputs()
+    return list(_outputs_cache["list"]), _outputs_cache["default"]
+
+
+def set_default_output(dev_id: str, comms: bool = False, timeout: float = 3.0) -> bool:
+    """Default sink + move the streams already playing (PulseAudio leaves them on the old sink)."""
+    if not shutil.which("pactl"):
+        return False
+    try:
+        ok = subprocess.run(["pactl", "set-default-sink", dev_id], timeout=timeout).returncode == 0
+        streams = subprocess.run(["pactl", "list", "short", "sink-inputs"], capture_output=True, text=True,
+                                 timeout=timeout).stdout
+        for line in streams.splitlines():
+            if line.split():
+                subprocess.run(["pactl", "move-sink-input", line.split()[0], dev_id], timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("cannot switch the output to %s: %s", dev_id, exc)
+        return False
+    _refresh_outputs()
+    return ok

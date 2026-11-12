@@ -85,6 +85,19 @@ BLUE = st("#1d2b53", "#0b1020")
 SLATE = st("#1e2533", "#0d1118")
 
 
+AUDIO_OUT_STYLE = st("#062a33", "#03161b", "#22d3ee")
+
+
+def audio_output_zone() -> Slot:
+    """Default playback device; tap = next one (Ctrl+Win+V on the deck)."""
+    return Slot(widget=w("audio_output"), style=AUDIO_OUT_STYLE)
+
+
+def audio_output_knob() -> Knob:
+    return Knob(left={"type": "audio_output", "op": "prev"}, right={"type": "audio_output", "op": "next"},
+                press={"type": "audio_output", "op": "next"})
+
+
 def daily(lang: str) -> Page:
     p = Page(id="daily", name=_t(lang, "daily"), icon="sun", accent="#5b8cff")
     p.keys = [
@@ -103,16 +116,14 @@ def daily(lang: str) -> Page:
     ]
     p.zones = [
         Slot(widget=w("volume"), style=st("#14213d", "#0a1020")),
-        Slot(label=_t(lang, "deck"), icon="sun", style=st("#2b2205", "#120e02", "#facc15"),
-             action={"type": "deck", "op": "screensaver"}),
+        audio_output_zone(),
         Slot(label=_t(lang, "scroll"), icon="mouse", style=SLATE),
         Slot(widget=w("page_name"), style=st("#1e1b4b", "#0b0a1f", "#818cf8"), action={"type": "page", "target": "menu"}),
     ]
     p.knobs = [
         Knob(left={"type": "volume", "op": "down", "step": 2}, right={"type": "volume", "op": "up", "step": 2},
              press={"type": "volume", "op": "mute"}),
-        Knob(left={"type": "brightness", "op": "down", "step": 5}, right={"type": "brightness", "op": "up", "step": 5},
-             press={"type": "deck", "op": "screensaver"}),
+        audio_output_knob(),
         Knob(left={"type": "scroll", "steps": 3}, right={"type": "scroll", "steps": -3},
              press={"type": "media", "op": "playpause"}),
         Knob(left={"type": "page", "target": "prev"}, right={"type": "page", "target": "next"},
@@ -292,7 +303,7 @@ def build_default_profile(lang: str) -> Profile:
                      {"process": "FlightSimulator2024.exe", "page": "msfs"},
                      {"process": "FlightSimulator.exe", "page": "msfs"}, *NEW_RULES],
         idle_minutes=15, idle_mode="clock",
-        seen_presets=["daily", "windows", "assetto", "msfs", "msfs2", *NEW_PAGES, "assetto+rgb"])
+        seen_presets=["daily", "windows", "assetto", "msfs", "msfs2", *NEW_PAGES, "assetto+rgb", "daily+audio_out"])
 
 
 # --------------------------------------------------------------------------- upgrades
@@ -311,6 +322,16 @@ def add_new_presets(profile: Profile, lang: str) -> bool:
             profile.pages.append(build(lang))
             known = {r.get("process", "").lower() for r in profile.auto_switch}
             profile.auto_switch += [r for r in NEW_RULES if r["page"] == pid and r["process"].lower() not in known]
+    # 0.4: the Daily page's deck-brightness zone + knob became the audio output switch. Only slots still
+    # as shipped are replaced; anything the user edited stays.
+    if "daily+audio_out" not in profile.seen_presets:
+        profile.seen_presets.append("daily+audio_out")
+        changed = True
+        page = profile.page("daily")
+        if page and len(page.zones) > 1 and _is_stock_brightness_zone(page.zones[1]):
+            page.zones[1] = audio_output_zone()
+        if page and len(page.knobs) > 1 and (page.knobs[1].left or {}).get("type") == "brightness"                 and (page.knobs[1].right or {}).get("type") == "brightness":
+            page.knobs[1] = audio_output_knob()
     # 0.2: the built-in Assetto page also drives RGB shift lights
     if "assetto+rgb" not in profile.seen_presets:
         profile.seen_presets.append("assetto+rgb")
@@ -319,6 +340,11 @@ def add_new_presets(profile: Profile, lang: str) -> bool:
         if page and "ac_shift_lights" in page.effects and "rgb_shift_lights" not in page.effects:
             page.effects.append("rgb_shift_lights")
     return changed
+
+
+def _is_stock_brightness_zone(slot: Slot) -> bool:
+    return (slot.widget is None and slot.icon == "sun" and (slot.action or {}).get("type") == "deck"
+            and slot.label in {v for v in L["deck"].values()})
 
 
 # --------------------------------------------------------------------------- pages added in 0.2

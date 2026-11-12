@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from .audio_outputs import DEFAULT_SKIP
 from .platform import os_backend as osb
 
 if TYPE_CHECKING:
@@ -117,6 +118,33 @@ def _mic(engine, a):
     else:
         osb.toggle_mic()
     engine.poke_audio()
+
+
+@action("audio_output", "media", "speaker", Field("op", "choice", "next", (
+        ("next", "audio_out.next"), ("prev", "audio_out.prev"), ("set", "audio_out.set"))),
+        Field("device", "text", ""), Field("skip", "text", DEFAULT_SKIP), Field("comms", "bool", False))
+def _audio_output(engine, a):
+    """Switch the default playback device: the next / previous one, or one by name (op=set)."""
+    from . import audio_outputs as ao
+    outputs, current = osb.audio_outputs()
+    if not outputs:
+        osb.refresh_outputs()
+        engine.call_in_ui(lambda: engine.toast.emit(tr_("audio_out.none")))
+        return
+    skip = a.get("skip")
+    op = a.get("op", "next")
+    target = ao.find(outputs, a.get("device") or a.get("name", "")) if op == "set" else \
+        ao.step(outputs, current, -1 if op == "prev" else 1, skip)
+    if target is None or target.id == current:
+        return
+    engine.output_switching(target)
+    ok = osb.set_default_output(target.id, bool(a.get("comms")))
+    engine.output_switched(target, ok)
+
+
+def tr_(key: str, **kw) -> str:
+    from .i18n import tr
+    return tr(key, **kw)
 
 
 # --------------------------------------------------------------------------- soundboard

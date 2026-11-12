@@ -163,6 +163,7 @@ class Engine(QObject):
         self._mixer = None                       # soundboard, created when a page uses sounds
         self._no_cable_told = False
         self.audio: dict = {"level": None, "muted": None, "mic_muted": None}
+        self._output_pending: tuple | None = None    # (Output, until) while the default output is switching
         self._audio_poke = threading.Event()
         self._started: set[str] = set()
         self._ac_bindings: dict = {}
@@ -259,6 +260,35 @@ class Engine(QObject):
         time.sleep(0.03)
         self._audio_poke.set()
 
+    # ------------------------------------------------------------------ default playback device
+    def audio_outputs(self) -> tuple[list, str | None]:
+        """([Output], default id) for widgets: the device being switched to counts as the default already,
+        so the key answers the tap at once instead of after Windows is done."""
+        outputs, current = osb.audio_outputs()
+        pending = self._output_pending
+        if pending and time.monotonic() < pending[1]:
+            current = pending[0].id
+        return outputs, current
+
+    def output_switching(self, target) -> None:
+        """Worker thread, right before the switch."""
+        self._output_pending = (target, time.monotonic() + 4.0)
+
+    def output_switched(self, target, ok: bool) -> None:
+        """Worker thread, after the switch: toast, and the soundboard's "only me" sounds follow."""
+        from .audio_outputs import title
+        self._output_pending = None
+        if not ok:
+            self.call_in_ui(lambda: self.toast.emit(tr("audio_out.failed", name=title(target)[0])))
+            return
+        if self._mixer is not None and hasattr(self._mixer, "follow_output"):
+            try:
+                self._mixer.follow_output(target.name)
+            except Exception:  # noqa: BLE001
+                log.exception("soundboard could not follow the new output")
+        self.poke_audio()
+        self.call_in_ui(lambda: self.toast.emit("🔊 " + title(target)[0]))
+
     # ================================================================== device
     def _on_connected(self, dev: N4Device) -> None:
         self.device = dev
@@ -287,6 +317,8 @@ class Engine(QObject):
         a = slot.action
         if not a and slot.widget and (w := WIDGETS.get(slot.widget.get("type"))) and w.press:
             a = w.press
+            if a.get("type") == "audio_output" and "skip" in slot.widget:
+                a = {**a, "skip": slot.widget["skip"]}     # the key cycles the devices it shows
         if a and a.get("type") == "timer":
             a = {**a, "_slot": ref}
         return a

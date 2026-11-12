@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from .actions import Field
+from .audio_outputs import DEFAULT_SKIP
 from .i18n import tr
 from .render import Visual
 
@@ -164,6 +165,27 @@ def _volume(e, s, c, v):
     return v.with_(icon=icon, value=f"{level * 100:.0f}%", progress=frac, progress_style="bar",
                    label=v.label or tr("action.volume"), active=bool(muted),
                    accent="#ef4444" if muted else v.accent)
+
+
+@widget("audio_output", "media", "speaker", Field("skip", "text", DEFAULT_SKIP),
+        press={"type": "audio_output", "op": "next"})
+def _audio_output(e, s, c, v):
+    """The default playback device; a tap moves to the next one (the deck's Ctrl+Win+V)."""
+    from . import audio_outputs as ao
+    outputs, current = e.audio_outputs()
+    dev = next((o for o in outputs if o.id == current), None)
+    if dev is None:
+        return v.with_(value="--", sub=tr("audio_out.none"), label="", icon=v.icon or "volume-x", dim=0.3)
+    big, small = ao.title(dev)
+    idx, count = ao.position(outputs, current, c.get("skip"))
+    level, muted = e.audio.get("level"), e.audio.get("muted")
+    sub = small or tr("widget.audio_output")
+    if muted:
+        sub = tr("audio_out.muted")
+    return v.with_(value=big, sub=sub, label="", icon=v.icon or ao.icon_for(dev),
+                   badge=f"{idx}/{count}" if count > 1 and idx else None,
+                   progress=level if level is not None else None, progress_style="bar",
+                   dim=0.25 if muted else 0.0)
 
 
 @widget("mic", "media", "mic", press={"type": "mic", "op": "toggle"})

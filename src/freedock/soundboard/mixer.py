@@ -88,6 +88,7 @@ class Mixer:
         self._mic_stream = None
         self._local_stream = None
         self._local_last = 0.0
+        self._local_device: int | None = None   # chosen by follow_output(); None = PortAudio's default
         self.status: dict = {"cable": None, "mic": None, "error": None, "passthrough": False}
         self._sd = None
         self._started = False
@@ -269,12 +270,26 @@ class Mixer:
         with PA_LOCK:
             return self._open_local()
 
+    def follow_output(self, friendly_name: str) -> None:
+        """The default playback device changed (deck's output switch). PortAudio keeps the default it saw at
+        start-up, so the "only me" bus is moved by name; it reopens on the next sound."""
+        want = (friendly_name or "").lower()
+        match = None
+        for i, name in self.devices("output"):
+            n = name.lower()
+            if n == want or (len(n) >= 12 and (want.startswith(n) or n.startswith(want))):
+                match = i
+                break
+        with PA_LOCK:
+            self._local_device = match
+            self._close_local()
+
     def _open_local(self) -> bool:
         if self._local_stream is not None:
             return True
         sd = self._sounddevice()
         try:
-            dev = self._default("output")
+            dev = self._local_device if self._local_device is not None else self._default("output")
             self._local_stream = sd.OutputStream(device=dev, samplerate=SAMPLE_RATE, channels=CHANNELS,
                                                  dtype="float32", blocksize=BLOCK, latency="low",
                                                  extra_settings=self._extra(), callback=self._local_cb)
