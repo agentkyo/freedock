@@ -78,6 +78,9 @@ def _key_input(name: str, up: bool) -> INPUT:
         inp.ki = KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags | KEYEVENTF_EXTENDEDKEY, time=0, dwExtraInfo=0)
         return inp
     scan = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)
+    if not scan:                      # keys without a scan code (Pause): send the virtual key itself
+        inp.ki = KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0, dwExtraInfo=0)
+        return inp
     flags |= KEYEVENTF_SCANCODE
     if name in EXTENDED:
         flags |= KEYEVENTF_EXTENDEDKEY

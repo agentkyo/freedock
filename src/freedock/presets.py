@@ -654,7 +654,29 @@ def cs2_page(lang: str) -> Page:
     return p
 
 
+L.update({
+    "ets2_bus": {"en": "Coach", "pt": "Ônibus", "es": "Autobús"},
+    "doors": {"en": "Doors", "pt": "Portas", "es": "Puertas"},
+    "rear_cam": {"en": "Rear camera", "pt": "Câmera de ré", "es": "Cámara trasera"},
+})
+
+
+def ets2_bus(lang: str) -> Page:
+    """Coach page (ETS2 Coaches DLC): the cab page with doors and cameras where the trailer keys were.
+
+    A companion app that knows the vehicle (MyWheel) flips the deck between this page and the truck
+    page - see integrations/companion.py. Without one it is a normal page you open by hand."""
+    p = ets2(lang)
+    p.id, p.name, p.icon, p.accent = "ets2_bus", _t(lang, "ets2_bus"), "bus", "#a855f7"
+    p.keys[9] = Slot(label=_t(lang, "doors"), icon="door-open", action=e2("entrdoors"),
+                     style=st("#1e1033", "#0e0819", "#a855f7"))
+    p.zones[2] = Slot(label=_t(lang, "rear_cam"), icon="cctv", action=e2("parking_cams"),
+                      long_action=e2("cabinlight"), style=st("#1e1033", "#0e0819", "#a855f7"))
+    p.knobs[3] = _nav("ets2_bus")
+    return p
+
+
 NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "ets2_trip": ets2_trip, "beamng": beamng, "sounds": sounds_page,
-                  "cs2": cs2_page})
+                  "cs2": cs2_page, "ets2_bus": ets2_bus})
 NEW_RULES = [{"process": "eurotrucks2.exe", "page": "ets2"}, {"process": "amtrucks.exe", "page": "ets2"},
              {"process": "BeamNG.drive.x64.exe", "page": "beamng"}, {"process": "cs2.exe", "page": "cs2"}]

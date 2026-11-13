@@ -42,8 +42,8 @@ FRIENDLY = {
 def controls_ini_path(override: str = "") -> Path:
     if override:
         return Path(override)
-    docs = Path(os.environ.get("USERPROFILE", Path.home())) / "Documents"
-    return docs / "Assetto Corsa" / "cfg" / "controls.ini"
+    from .ets2 import _documents      # honours a redirected Documents folder (OneDrive)
+    return _documents() / "Assetto Corsa" / "cfg" / "controls.ini"
 
 
 @dataclass(frozen=True)

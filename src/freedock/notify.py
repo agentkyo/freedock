@@ -9,6 +9,8 @@ Three ways in, all ending in :meth:`Engine.notify_event`:
   also accepted) for anything that can make an HTTP request: shell scripts, Home Assistant, CI.
 * ``GET /state`` returns the current state of every source as JSON; ``/quit`` closes FreeDock.
 * ``/sound?id=<sound>&target=mic|local|both`` plays a soundboard sound, ``/sound?stop=1`` stops all.
+* ``GET /info``, ``/page?id=...`` and ``/context?game=...&vehicle=...`` are for companion apps such as
+  MyWheel - see :mod:`freedock.integrations.companion`.
 
 Only the loopback interface is bound, so nothing is reachable from the network, and requests that a
 browser marks as coming from a web page (``Origin`` / ``Sec-Fetch-Site``) are refused, so a website
@@ -147,7 +149,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _params(self) -> dict:
         url = urlparse(self.path)
         params = {k: v[-1] for k, v in parse_qs(url.query).items()}
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
         if length:
             raw = self.rfile.read(min(length, 65536))
             try:
@@ -193,8 +198,42 @@ class _Handler(BaseHTTPRequestHandler):
                 self.engine.call_in_ui(lambda: play(sid, target))
             self._reply(200, {"ok": True})
             return
+        companion = getattr(self, "companion", None)
+        if companion is not None and url.path == "/info":
+            # built on the UI thread: the profile may be mid-edit and the context mid-update
+            box, done = {}, threading.Event()
+
+            def build():
+                try:
+                    box["info"] = companion.info()
+                finally:
+                    done.set()
+            self.engine.call_in_ui(build)
+            if done.wait(2.0) and "info" in box:
+                self._reply(200, box["info"])
+            else:
+                self._reply(503, {"error": "busy"})
+            return
+        if companion is not None and url.path == "/page":
+            pid = str(self._params().get("id") or "")
+            if not companion.has_page(pid):
+                self._reply(404, {"error": f"no page {pid!r}"})
+                return
+            self.engine.call_in_ui(lambda: companion.show_page(pid))
+            self._reply(200, {"ok": True})
+            return
+        if companion is not None and url.path == "/context":
+            p = self._params()
+            game, vehicle = str(p.get("game") or "")[:24], str(p.get("vehicle") or "")[:24]
+            if not game or not vehicle:
+                self._reply(400, {"error": "game and vehicle are required"})
+                return
+            name, source = str(p.get("name") or "")[:64], str(p.get("source") or "")[:24]
+            self.engine.call_in_ui(lambda: companion.set_context(game, vehicle, name, source))
+            self._reply(200, {"ok": True})
+            return
         if url.path != "/notify":
-            self._reply(404, {"error": "use /notify, /sound or /state"})
+            self._reply(404, {"error": "use /notify, /sound, /state, /info, /page or /context"})
             return
         p = self._params()
         src = str(p.get("source") or p.get("tool") or "custom")[:24]
@@ -220,7 +259,10 @@ class HttpBridge:
     def start(self) -> None:
         if self._server or not self.port:
             return
-        handler = type("Handler", (_Handler,), {"engine": self.engine})
+        from .integrations.companion import Companion
+        companion = Companion(self.engine)
+        self.engine.companion = companion        # auto-switch asks it which vehicle page to open
+        handler = type("Handler", (_Handler,), {"engine": self.engine, "companion": companion})
         try:
             self._server = ThreadingHTTPServer(("127.0.0.1", int(self.port)), handler)
         except OSError as exc:

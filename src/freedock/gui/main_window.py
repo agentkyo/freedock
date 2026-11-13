@@ -642,6 +642,7 @@ class MainWindow(QMainWindow):
         engine.frame.connect(self._frame)
         engine.page_changed.connect(self._engine_page)
         engine.device_changed.connect(self._device)
+        engine.device_stuck.connect(self._device_stuck)
         engine.toast.connect(lambda t: self.statusBar().showMessage(t, 4000))
 
         self._tray()
@@ -694,6 +695,7 @@ class MainWindow(QMainWindow):
         menu.addAction(tr("ui.open"), self._show)
         self.tray_pages = menu.addMenu(tr("ui.pages"))
         menu.addSeparator()
+        menu.addAction(tr("ui.usb_restart"), self.engine.restart_dock_usb)
         menu.addAction(tr("ui.quit"), self.quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: self._show() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
@@ -737,6 +739,15 @@ class MainWindow(QMainWindow):
             self.page = self.profile.page(pid) or self.page
             self.pages.refresh(pid)
             self.select(self.selection)
+
+    def _device_stuck(self, label: str) -> None:
+        """The deck is plugged in but refuses data: say so, and offer the software replug."""
+        self.status.setText("⚠  " + tr("ui.device_stuck"))
+        self.status.setObjectName("pill")
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray.showMessage(APP_NAME, tr("ui.device_stuck_hint"), QSystemTrayIcon.MessageIcon.Warning, 8000)
 
     def _device(self, text: str) -> None:
         if text:

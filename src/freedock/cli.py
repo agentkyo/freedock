@@ -104,6 +104,27 @@ def send_to_running(message: str, need_ack: bool = False) -> bool:
     return acked if need_ack else True
 
 
+_instance_lock = None
+
+
+def claim_instance() -> bool:
+    """Become the only FreeDock allowed to open the deck, right now.
+
+    ``send_to_running`` only finds an instance that is already serving its socket, which happens
+    seconds after start. Two launches inside that window (autostart plus a double-click, or a
+    restart racing the old process) both went on to open the deck and fought over it. A lock file
+    closes the window; the OS drops it if the process dies."""
+    global _instance_lock
+    import tempfile
+    from PySide6.QtCore import QLockFile
+    lock = QLockFile(str(Path(tempfile.gettempdir()) / (INSTANCE + ".lock")))
+    lock.setStaleLockTime(0)
+    if not lock.tryLock(0):
+        return False
+    _instance_lock = lock
+    return True
+
+
 def serve_instance(handlers: dict):
     """Become the single running instance; ``handlers`` maps message -> callable."""
     from PySide6.QtNetwork import QLocalServer
@@ -276,7 +297,7 @@ def cmd_quit(args) -> int:
 
 def cmd_run(args) -> int:
     app = _app(headless=True)
-    if send_to_running("ping"):
+    if send_to_running("ping") or not claim_instance():
         print("FreeDock is already running (use 'freedock quit' first).")
         return 1
     from .engine import Engine
@@ -429,6 +450,9 @@ def gui_main(argv: list[str] | None = None) -> int:
         return _supervise(sys.argv[1:] if argv is None else list(argv))
     app = _app(headless=False)
     if send_to_running("show"):       # already running: just bring its window up
+        return 0
+    if not claim_instance():          # another one is still starting (or still closing): let it be
+        logging.info("another FreeDock is starting or closing; not opening the deck twice")
         return 0
     from .gui.main_window import run_gui
     settings, profile = _load(args)

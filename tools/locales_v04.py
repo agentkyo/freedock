@@ -76,6 +76,16 @@ EXTRA4 = {
     # ---- Euro Truck / ATS: route advisor and compass gone, job pay and cargo damage in
     "ets2.cargo": ("Cargo damage", "Dano da carga", "Daño de la carga"),
     "ets2.income": ("Job pay", "Frete", "Pago"),
+    # ---- a deck that is plugged in but refuses data, and the software replug
+    "ui.device_stuck": ("N4 not responding", "N4 não responde", "N4 no responde"),
+    "ui.device_stuck_hint": ("The deck is connected but refuses data. Use 'Restart the dock USB' in this menu, or replug it.",
+                             "O deck está conectado mas não aceita dados. Use 'Reiniciar USB do dock' neste menu, ou reconecte o cabo.",
+                             "El deck está conectado pero no acepta datos. Usa 'Reiniciar USB del dock' en este menú, o reconecta el cable."),
+    "ui.usb_restart": ("Restart the dock USB (administrator)", "Reiniciar USB do dock (administrador)",
+                       "Reiniciar USB del dock (administrador)"),
+    "ui.usb_restart_started": ("Restarting the dock's USB…", "Reiniciando o USB do dock…", "Reiniciando el USB del dock…"),
+    "ui.usb_restart_failed": ("USB restart not started - replug the deck", "Reinício do USB não iniciado - reconecte o deck",
+                              "Reinicio del USB no iniciado - reconecta el deck"),
 }
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))

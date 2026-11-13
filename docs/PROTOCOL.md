@@ -16,6 +16,13 @@ next to whatever you plug into the N4's ports.
 > **Power / cabling.** If the N4 keeps connecting and disconnecting every few seconds, its USB 3
 > link is failing and it falls back to USB 2 without enough power for the screens and the hub.
 > Use the original cable, straight into a rear port, or feed the N4's power input.
+>
+> **Stuck but still plugged in.** A bad link can also leave the N4 on the bus while it refuses every
+> transfer (`short write (-1 of 1025)` in the log). Restarting FreeDock cannot fix that - a killed
+> sender, a half-sent image or two programs writing at once were all tested and do not cause it - only a
+> USB port reset does, which is what replugging the cable achieves. FreeDock reports the state once,
+> shows it in the window and tray, and offers **Restart the dock USB** in the tray menu: it restarts
+> the device node (`pnputil /restart-device`, one UAC prompt on Windows) instead of pulling the cable.
 
 ## Reports
 

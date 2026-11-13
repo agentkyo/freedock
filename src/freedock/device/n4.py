@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 HEARTBEAT_SECONDS = 8.0
 HOTPLUG_SECONDS = 1.5
+STUCK_AFTER = 3          # failed opens of a device that *is* on the bus before we call it stuck
+JOIN_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -63,14 +65,24 @@ class N4Device:
         self._pending_cmds: list[bytes] = []
         self._cond = threading.Condition()
         self._alive = True
+        self._closed = False
+        self._close_lock = threading.Lock()
         self._lost_reported = False
-        self.firmware = self._read_firmware()
-        # Claim the panel first: after a previous session handed it back to the firmware (CLE DC) the
-        # panel ignores images until it hears CONNECT - the keys stayed black until a replug.
-        self._send(protocol.heartbeat())
-        self._resync()
-        self._send(protocol.wake_screen())
-        self._send(protocol.heartbeat())
+        self._threads: list[threading.Thread] = []
+        try:
+            self.firmware = self._read_firmware()
+            # Claim the panel first: after a previous session handed it back to the firmware (CLE DC)
+            # the panel ignores images until it hears CONNECT - the keys stayed black until a replug.
+            self._send(protocol.heartbeat())
+            self._resync()
+            self._send(protocol.wake_screen())
+            self._send(protocol.heartbeat())
+        except BaseException:
+            # a panel that refuses the handshake must not keep a handle open: every retry used to
+            # leak one, and Windows keeps a dead device node around while handles to it exist
+            self._alive = False
+            self._close_handle()
+            raise
         self._threads = [
             threading.Thread(target=self._reader, name="n4-reader", daemon=True),
             threading.Thread(target=self._writer, name="n4-writer", daemon=True),
@@ -102,19 +114,37 @@ class N4Device:
         self._queue(protocol.wake_screen())
 
     def close(self, hand_back: bool = True) -> None:
-        if not self._alive:
-            return
+        """Stop the threads, optionally hand the panel back to the firmware, release the handle.
+
+        Safe to call more than once and after the device was lost. (It used to return early once
+        ``_alive`` was false - which ``_lost`` sets - so a lost device never had its handle closed.)
+        """
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+        usable = self._alive and not self._lost_reported
         self._alive = False
         with self._cond:
             self._cond.notify_all()
-        try:
-            if hand_back:
+        # Wait for the writer to finish the image it is in the middle of: a hand-back sent between
+        # two data reports is swallowed as JPEG bytes and leaves the firmware mid-upload. Waiting for
+        # the reader keeps hid_close() from freeing the device under a thread still inside hid_read().
+        me = threading.current_thread()
+        for t in self._threads:
+            if t is not me:
+                t.join(JOIN_SECONDS)
+        if hand_back and usable:
+            try:
                 self._send(protocol.clear())
                 self._send(protocol.flush())
                 self._send(protocol.shutdown())
-        except OSError:
-            pass
-        time.sleep(0.05)
+                time.sleep(0.05)
+            except (OSError, ValueError):
+                pass
+        self._close_handle()
+
+    def _close_handle(self) -> None:
         try:
             self._dev.close()
         except Exception:  # noqa: BLE001 - closing a vanished device can raise anything
@@ -130,7 +160,15 @@ class N4Device:
         with self._write_lock:
             written = self._dev.write(report)
         if written != len(report):
-            raise OSError(f"short write ({written} of {len(report)})")
+            raise OSError(f"short write ({written} of {len(report)}){self._why()}")
+
+    def _why(self) -> str:
+        """The backend's own explanation of the last failure (e.g. the Windows error text)."""
+        try:
+            text = str(self._dev.error() or "").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+        return f": {text}" if text and text.lower() != "success" else ""
 
     def _resync(self) -> None:
         """Recover a panel left mid-upload by a program that died while sending an image.
@@ -204,6 +242,8 @@ class N4Device:
                     self._send(report)
                 if images:
                     for image_id, jpeg in images.items():
+                        if not self._alive:         # closing: stop between images, never inside one
+                            break
                         for report in protocol.image(image_id, jpeg):
                             self._send(report)
                     self._send(protocol.flush())
@@ -221,11 +261,15 @@ class DeviceWatcher:
     """Keeps one N4 connected: opens the first one found and reopens it after unplug/replug."""
 
     def __init__(self, on_connect: Callable[[N4Device], None], on_disconnect: Callable[[], None],
-                 on_input: Callable[[InputEvent], None], serial: str | None = None):
+                 on_input: Callable[[InputEvent], None], serial: str | None = None,
+                 on_stuck: Callable[[DeviceInfo, str], None] | None = None):
         self._on_connect = on_connect
         self._on_disconnect = on_disconnect
         self._on_input = on_input
+        self._on_stuck = on_stuck
         self._serial = serial
+        self._failures = 0          # consecutive failed opens of a device that is on the bus
+        self.stuck: DeviceInfo | None = None
         self.device: N4Device | None = None
         self._stop = threading.Event()
         self._lost = threading.Event()
@@ -236,6 +280,11 @@ class DeviceWatcher:
 
     def stop(self) -> None:
         self._stop.set()
+        self._lost.set()            # wake the hotplug loop now instead of after its 1.5 s nap
+        if self._thread.is_alive() and self._thread is not threading.current_thread():
+            # let a connect in progress finish (or fail) first: quitting in the middle of the
+            # handshake would leave the panel half-initialised for the next start
+            self._thread.join(JOIN_SECONDS * 2)
         if self.device:
             self.device.close()
             self.device = None
@@ -245,6 +294,8 @@ class DeviceWatcher:
             if self.device is None:
                 self._try_open()
             if self._lost.wait(HOTPLUG_SECONDS):
+                if self._stop.is_set():
+                    return
                 self._lost.clear()
                 if self.device:
                     self.device.close(hand_back=False)
@@ -255,11 +306,26 @@ class DeviceWatcher:
         for info in enumerate_devices():
             if self._serial and info.serial != self._serial:
                 continue
+            if self._stop.is_set():
+                return
             try:
                 self.device = N4Device(info, self._on_input, self._lost.set)
             except OSError as exc:
-                log.info("cannot open %s yet: %s", info.label, exc)
+                self._failures += 1
+                # the first failures are normal right after plugging in; after that say it once,
+                # loudly, instead of one line every retry for as long as it lasts
+                if self._failures < STUCK_AFTER:
+                    log.info("cannot open %s yet: %s", info.label, exc)
+                elif self._failures == STUCK_AFTER:
+                    log.warning("%s is on the bus but refuses data (%s). It needs a USB reset: "
+                                "replug it, or use 'Restart the dock USB' in the tray menu", info.label, exc)
+                    self.stuck = info
+                    if self._on_stuck:
+                        self._on_stuck(info, str(exc))
                 continue
+            if self._failures >= STUCK_AFTER:
+                log.info("%s answers again after %d failed attempts", info.label, self._failures)
+            self._failures, self.stuck = 0, None
             log.info("connected %s firmware=%s", info.label, self.device.firmware)
             self._on_connect(self.device)
             return

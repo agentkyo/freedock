@@ -119,11 +119,13 @@ class Engine(QObject):
     frame = Signal(str, QImage)              # slot key ("key0", "zone3"), picture (unrotated)
     page_changed = Signal(str)
     device_changed = Signal(str)             # human status text
+    device_stuck = Signal(str)               # the deck is on the bus but refuses data (label)
     toast = Signal(str)
     _ui_call = Signal(object)
     _dev_event = Signal(object)
     _dev_connected = Signal(object)
     _dev_lost = Signal()
+    _dev_stuck = Signal(str)
 
     def __init__(self, profile: Profile, settings: Settings):
         super().__init__()
@@ -180,8 +182,10 @@ class Engine(QObject):
 
         threading.Thread(target=self._worker, name="actions", daemon=True).start()
         threading.Thread(target=self._audio_loop, name="audio", daemon=True).start()
+        self._dev_stuck.connect(self.device_stuck)
         self._watcher = DeviceWatcher(lambda d: self._dev_connected.emit(d), lambda: self._dev_lost.emit(),
-                                      lambda e: self._dev_event.emit(e), settings.device_serial)
+                                      lambda e: self._dev_event.emit(e), settings.device_serial,
+                                      on_stuck=lambda info, why: self._dev_stuck.emit(info.label))
         self._tick = QTimer(self)
         self._tick.setInterval(int(1000 / FPS))
         self._tick.timeout.connect(self._on_tick)
@@ -315,6 +319,20 @@ class Engine(QObject):
     def _on_lost(self) -> None:
         self.device = None
         self.device_changed.emit("")
+
+    def restart_dock_usb(self) -> bool:
+        """Software replug of the deck (see device/usbreset.py). Windows shows a UAC prompt."""
+        from .device import usbreset
+        ok = usbreset.restart(N4)
+        self.toast.emit(tr("ui.usb_restart_started" if ok else "ui.usb_restart_failed"))
+        return ok
+
+    def _auto_pages(self) -> set[str]:
+        """The auto-switched page and its vehicle siblings (truck page <-> coach page)."""
+        if self._auto_page is None:
+            return set()
+        comp = getattr(self, "companion", None)
+        return {self._auto_page} | (comp.siblings_of(self._auto_page) if comp is not None else set())
 
     # ================================================================== input
     def _slot(self, ref: SlotRef) -> Slot:
@@ -521,7 +539,8 @@ class Engine(QObject):
         if new.id == self.page.id:
             return
         if not auto:
-            self._manual_override = self._auto_page is not None
+            # leaving the game's page by hand is an override; coming back to it is not
+            self._manual_override = self._auto_page is not None and new.id not in self._auto_pages()
         if target != "back":
             self._history = (self._history + [self.page.id])[-20:]
         if self.profile.animations:
@@ -683,7 +702,8 @@ class Engine(QObject):
         try:
             if game == "ets2":
                 from .integrations import ets2
-                path = ets2.controls_path()
+                # ETS2 and ATS keep separate profiles: read the running game's, not just the newest
+                path = ets2.controls_path(game=ets2.telemetry.data.get("game"))
                 key = (path, path.stat().st_mtime if path else 0)
                 if cache.get(game, (None, None))[0] != key:
                     cache[game] = (key, ets2.read_bindings(path))
@@ -829,13 +849,19 @@ class Engine(QObject):
         if not rules or running is None:
             return
         hit = next((r for r in rules if r["process"].lower() in running), None)
+        comp = getattr(self, "companion", None)
         if hit:
             if self._auto_page != hit["page"]:
+                if self._auto_page is None:         # game A -> game B: still return to where we started
+                    self._auto_return = self.page.id
                 self._auto_page, self._manual_override = hit["page"], False
-                self._auto_return = self.page.id
-                self.goto(hit["page"], auto=True)
-                self.toast.emit("▶ " + (self.profile.page(hit["page"]).name))
+                # a companion may already know the vehicle (coach, not truck): open that page directly
+                target = comp.resolve(hit["page"]) if comp is not None else hit["page"]
+                self.goto(target, auto=True)
+                self.toast.emit("▶ " + (self.profile.page(target).name))
         elif self._auto_page:
+            if comp is not None:
+                comp.forget()                       # the game is gone: its vehicle is no longer known
             back = self._auto_return
             self._auto_page = self._auto_return = None
             if back and not self._manual_override:

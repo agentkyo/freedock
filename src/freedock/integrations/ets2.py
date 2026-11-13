@@ -324,6 +324,7 @@ ACTIONS = {
     "laneassist": "Lane assist",
     "diflock": "Diff lock", "liftaxle": "Lift axle", "liftaxlet": "Lift trailer axle",
     "attach": "Trailer attach/detach", "quickpark": "Quick park",
+    "entrdoors": "Coach doors", "parking_cams": "Parking cameras", "cabinlight": "Cabin light",
     "advmouse": "Route advisor", "advzoomout": "Route advisor zoom", "navmap": "Map",
     "display": "Dashboard display", "infotainment": "Infotainment", "showhud": "Toggle HUD",
     "showmirrors": "Toggle mirrors",
@@ -459,13 +460,16 @@ def _documents() -> Path:
     return Path(os.environ.get("USERPROFILE", Path.home())) / "Documents"
 
 
-def controls_path(override: str = "") -> Path | None:
-    """The most recently modified controls.sii of any ETS2/ATS profile (local or Steam Cloud)."""
+def controls_path(override: str = "", game: str | None = None) -> Path | None:
+    """The most recently modified controls.sii of an ETS2/ATS profile (local or Steam Cloud).
+
+    ``game`` ("ets2" / "ats", from telemetry) keeps yesterday's ATS bindings out of today's ETS2."""
     if override:
         return Path(override)
     docs = _documents()
     found = []
-    for folder in GAME_FOLDERS.values():
+    folders = [GAME_FOLDERS[game]] if game in GAME_FOLDERS else list(GAME_FOLDERS.values())
+    for folder in folders:
         for sub in ("steam_profiles", "profiles"):
             found += (docs / folder / sub).glob("*/controls.sii")
     if not found:
