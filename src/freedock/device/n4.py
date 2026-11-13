@@ -23,6 +23,8 @@ HEARTBEAT_SECONDS = 8.0
 HOTPLUG_SECONDS = 1.5
 STUCK_AFTER = 3          # failed opens of a device that *is* on the bus before we call it stuck
 JOIN_SECONDS = 3.0
+RECLAIM_SETTLE = 1.0     # seconds the firmware needs after a hand-back before it can be claimed again
+WAKE_SETTLE = 0.5        # ... and after waking the panel before it shows images
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class N4Device:
     """An open N4. Thread-safe; all public methods may be called from any thread."""
 
     def __init__(self, info: DeviceInfo, on_input: Callable[[InputEvent], None],
-                 on_lost: Callable[[], None]):
+                 on_lost: Callable[[], None], brightness: int = 100):
         self.info = info
         self.model = info.model
         self._on_input = on_input
@@ -71,12 +73,9 @@ class N4Device:
         self._threads: list[threading.Thread] = []
         try:
             self.firmware = self._read_firmware()
-            # Claim the panel first: after a previous session handed it back to the firmware (CLE DC)
-            # the panel ignores images until it hears CONNECT - the keys stayed black until a replug.
             self._send(protocol.heartbeat())
             self._resync()
-            self._send(protocol.wake_screen())
-            self._send(protocol.heartbeat())
+            self._reclaim(brightness)
         except BaseException:
             # a panel that refuses the handshake must not keep a handle open: every retry used to
             # leak one, and Windows keeps a dead device node around while handles to it exist
@@ -181,8 +180,22 @@ class N4Device:
         for _ in range(protocol.MAX_IMAGE_BYTES // protocol.PACKET_SIZE):
             self._send(blank)
         self._send(protocol.flush())
-        self._send(protocol.clear())
-        self._send(protocol.flush())
+
+    def _reclaim(self, brightness: int) -> None:
+        """Take the panel over in a way that works whatever the previous session left behind.
+
+        After a clean quit (hand-back, then the handle closed) the screens stay off and the panel
+        ignores every image, although it accepts all the data: CONNECT, wake and clear are not
+        enough, and it stayed dark until the cable was pulled. Measured on a real N4 with a
+        colour per key: what brings it back is a hand-back sent on the *open* handle, a pause, and
+        only then CONNECT, wake and brightness. The hand-back also wipes whatever was on screen.
+        """
+        self._send(protocol.shutdown())
+        time.sleep(RECLAIM_SETTLE)
+        self._send(protocol.heartbeat())
+        self._send(protocol.wake_screen())
+        self._send(protocol.brightness(brightness))
+        time.sleep(WAKE_SETTLE)
 
     def _read_firmware(self) -> str | None:
         for getter in (lambda: self._dev.get_feature_report(1, 20),
@@ -262,11 +275,13 @@ class DeviceWatcher:
 
     def __init__(self, on_connect: Callable[[N4Device], None], on_disconnect: Callable[[], None],
                  on_input: Callable[[InputEvent], None], serial: str | None = None,
-                 on_stuck: Callable[[DeviceInfo, str], None] | None = None):
+                 on_stuck: Callable[[DeviceInfo, str], None] | None = None,
+                 brightness: Callable[[], int] | None = None):
         self._on_connect = on_connect
         self._on_disconnect = on_disconnect
         self._on_input = on_input
         self._on_stuck = on_stuck
+        self._brightness = brightness
         self._serial = serial
         self._failures = 0          # consecutive failed opens of a device that is on the bus
         self.stuck: DeviceInfo | None = None
@@ -309,7 +324,8 @@ class DeviceWatcher:
             if self._stop.is_set():
                 return
             try:
-                self.device = N4Device(info, self._on_input, self._lost.set)
+                self.device = N4Device(info, self._on_input, self._lost.set,
+                                       self._brightness() if self._brightness else 100)
             except OSError as exc:
                 self._failures += 1
                 # the first failures are normal right after plugging in; after that say it once,

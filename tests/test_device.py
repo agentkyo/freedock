@@ -60,6 +60,8 @@ class FakeHid:
 def fake_hid(monkeypatch):
     FakeHid.instances.clear()
     monkeypatch.setattr(n4.hid, "device", FakeHid)
+    monkeypatch.setattr(n4, "RECLAIM_SETTLE", 0)
+    monkeypatch.setattr(n4, "WAKE_SETTLE", 0)
     yield
 
 
@@ -69,6 +71,19 @@ def names(writes):
     for w in writes:
         out.append(w[6:9].decode("ascii", "replace") if w[1:4] == b"CRT" else ".")
     return out
+
+
+def test_connect_reclaims_the_panel_after_a_previous_hand_back():
+    """Measured on hardware: after a clean quit only hand-back -> CONNECT -> wake -> brightness, sent on
+    the open handle, makes the panel show images again (CONNECT + wake alone left it dark)."""
+    dev = N4Device(INFO, lambda e: None, lambda: None, brightness=70)
+    hidd = FakeHid.instances[-1]
+    seq = names(hidd.writes)
+    assert seq[0] == "CON" and seq[1:11] == ["."] * 10 and seq[11] == "STP"      # claim + resync
+    assert hidd.writes[12] == protocol.shutdown()
+    assert hidd.writes[13:16] == [protocol.heartbeat(), protocol.wake_screen(), protocol.brightness(70)]
+    assert len(hidd.writes) == 16
+    dev.close()
 
 
 def test_clean_close_hands_the_panel_back_and_releases_the_handle():

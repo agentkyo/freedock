@@ -185,7 +185,8 @@ class Engine(QObject):
         self._dev_stuck.connect(self.device_stuck)
         self._watcher = DeviceWatcher(lambda d: self._dev_connected.emit(d), lambda: self._dev_lost.emit(),
                                       lambda e: self._dev_event.emit(e), settings.device_serial,
-                                      on_stuck=lambda info, why: self._dev_stuck.emit(info.label))
+                                      on_stuck=lambda info, why: self._dev_stuck.emit(info.label),
+                                      brightness=lambda: self.profile.brightness)
         self._tick = QTimer(self)
         self._tick.setInterval(int(1000 / FPS))
         self._tick.timeout.connect(self._on_tick)

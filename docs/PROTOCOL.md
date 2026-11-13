@@ -17,6 +17,12 @@ next to whatever you plug into the N4's ports.
 > link is failing and it falls back to USB 2 without enough power for the screens and the hub.
 > Use the original cable, straight into a rear port, or feed the N4's power input.
 >
+> **Reclaiming a handed-back panel.** After *hand back* and closing the handle, the next session can
+> send `CONNECT`, wake, clear and images for as long as it likes: every write succeeds and nothing is
+> shown until the cable is pulled. What works (checked on hardware, one colour per key): send *hand
+> back* again on the newly opened handle, wait about 1 s, then `CONNECT`, wake and brightness, wait
+> 0.5 s, then draw. FreeDock does this on every connect.
+>
 > **Stuck but still plugged in.** A bad link can also leave the N4 on the bus while it refuses every
 > transfer (`short write (-1 of 1025)` in the log). Restarting FreeDock cannot fix that - a killed
 > sender, a half-sent image or two programs writing at once were all tested and do not cause it - only a
@@ -44,7 +50,7 @@ id |  C  R  T       |
 | Flush | `STP` | Commit pending images to the panel |
 | Heartbeat | `CONNECT` | Keep-alive. Without it the firmware returns to its idle screen. FreeDock sends it every 8 s |
 | Sleep | `HAN` | Screen off |
-| Hand back | `CLE 00 00 'D' 'C'` | Release the panel to the firmware logo |
+| Hand back | `CLE 00 00 'D' 'C'` | Release the panel to the firmware: screens off, images ignored (see *Reclaiming*) |
 | Key image | `BAT <len:u32be> <id>` then `len` bytes of JPEG | Upload one image (≤ 10240 bytes) |
 | Background | `BGPIC <len:u32be> <x:u16> <y:u16> <w:u16> <h:u16> <sel:u8> 00` | Full-panel image (seen on N4 Pro firmware, experimental on N4) |
 | Clear background | `BGCLE 03 00` | |
