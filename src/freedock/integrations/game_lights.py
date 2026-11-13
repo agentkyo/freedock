@@ -11,6 +11,9 @@ takes it for the moments that matter - the C4 countdown, a flashbang, a kill, th
 lights - and gives it back right after. "theme" keeps the theme on it the whole time, "off" never
 touches it. Games that drive Razer Chroma themselves (native_chroma) keep the keyboard; FreeDock then
 only adds the strip.
+
+With no game (idle mode "screen", the default) the keyboard, mouse and headset follow the picture on
+the monitor, like the strip's ambilight (integrations/screen_sync.py); idle "off" leaves them to Synapse.
 """
 from __future__ import annotations
 
@@ -24,11 +27,13 @@ from .scenes import Effect, Frame, Theme
 log = logging.getLogger(__name__)
 
 FPS = 25.0
-DEFAULTS = {"enabled": True, "strip": "events", "native_chroma": [], "off": []}
+DEFAULTS = {"enabled": True, "strip": "events", "native_chroma": [], "off": [], "idle": "screen"}
+GLOW_EVERY_S = 0.25          # screen sync: mouse / headset color at most 4 times a second
 
 
 class GameLights:
-    def __init__(self, lights=None, clock: Callable[[], float] = time.monotonic, fps: float = FPS) -> None:
+    def __init__(self, lights=None, clock: Callable[[], float] = time.monotonic, fps: float = FPS,
+                 sampler_factory: Callable[[], object] | None = None) -> None:
         if lights is None:
             from .lighting import lights as default_lights
             lights = default_lights
@@ -44,6 +49,12 @@ class GameLights:
         self._last_frame: tuple | None = None
         self._driving = False
         self._native_released = False
+        if sampler_factory is None:
+            from .screen_sync import make_sampler as sampler_factory
+        self._sampler_factory = sampler_factory
+        self.sampler = None                       # screen_sync.ScreenSampler, made when first needed
+        self._glow = None
+        self._glow_t = -1e9
 
     # -- configuration / game detection (UI thread)
 
@@ -55,6 +66,29 @@ class GameLights:
     @property
     def enabled(self) -> bool:
         return bool(self.cfg.get("enabled", True))
+
+    @property
+    def idle_screen(self) -> bool:
+        return self.cfg.get("idle", "screen") == "screen"
+
+    def _screen(self, wanted: bool):
+        """The newest screen picture while screen sync is wanted; starts / stops the sampler."""
+        if not wanted:
+            if self.sampler is not None and self.sampler.running:
+                self.sampler.stop()
+            return None
+        if self.sampler is None:
+            self.sampler = self._sampler_factory()
+            if self.sampler is None:
+                self._sampler_factory = lambda: None
+                return None
+        self.sampler.start()
+        return self.sampler.latest()
+
+    @property
+    def screen_sync(self) -> bool:
+        """True while screen sync can run here (wanted, and a sampler that did not fail)."""
+        return self.idle_screen and self.sampler is not None and not getattr(self.sampler, "failed", False)
 
     def set_games(self, running: set[str], foreground: str | None) -> Theme | None:
         """Called every couple of seconds with the running process names. Returns the active theme."""
@@ -104,24 +138,29 @@ class GameLights:
         if cs2 is not None and d is None:
             self._cs2_cursor = cs2.events_since(self._cs2_cursor)[0]   # skip events of a game not shown
         self.effects = [e for e in self.effects if not e.done(now)]
-        if theme is None and shift is None and not self.effects:
-            self._stop()
-            return False
+        screen = self._screen(theme is None and self.idle_screen)
+        if theme is None and shift is None and not self.effects and screen is None:
+            if not self.screen_sync:
+                self._stop()
+                return False
+            return self._driving                       # sampler warming up: keep what is shown
         if paused:                                     # a notification flash is playing over us
             self._last_frame = None                    # ...and changed the lights: resend after it
             return self._driving
         if now - self._last < self.interval:
             return self._driving
         self._last = now
-        frame = self._compose(theme, now, shift, n_leds, d, truck)
+        frame = self._compose(theme, now, shift, n_leds, d, truck, screen)
         self._send(theme, frame)
         return True
 
     def _compose(self, theme: Theme | None, now: float, shift: float | None, n_leds: int, cs2: dict | None,
-                 truck: dict | None) -> Frame:
+                 truck: dict | None, screen=None) -> Frame:
         mode = self.cfg.get("strip", "events")
         strip_always = mode == "theme"
-        if theme is None:
+        if theme is None and screen is not None:
+            frame = self._screen_frame(screen, now)
+        elif theme is None:
             frame = Frame.blank(None)
         elif theme.id == "cs2" and cs2 is not None:
             frame = scenes.cs2_frame(theme, cs2, now, n_leds, strip_always)
@@ -142,6 +181,12 @@ class GameLights:
         if mode == "off":
             frame.strip = None
         return frame
+
+    def _screen_frame(self, screen, now: float) -> Frame:
+        keyboard, glow = screen
+        if self._glow is None or (glow != self._glow and now - self._glow_t >= GLOW_EVERY_S):
+            self._glow, self._glow_t = glow, now
+        return Frame([list(row) for row in keyboard], None, self._glow)
 
     def _send(self, theme: Theme | None, frame: Frame) -> None:
         native = self.native(theme)
@@ -166,4 +211,5 @@ class GameLights:
     def shutdown(self) -> None:
         self.theme = self.forced = None
         self.effects.clear()
+        self._screen(False)
         self._stop()

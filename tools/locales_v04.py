@@ -70,6 +70,12 @@ EXTRA4 = {
     "ui.game_native": ("Let the game's own Chroma effects keep the keyboard",
                        "Deixar os efeitos Chroma do próprio jogo no teclado",
                        "Dejar los efectos Chroma del propio juego en el teclado"),
+    "ui.game_idle_screen": ("When not playing, the keyboard, mouse and headset follow the screen (like the strip)",
+                            "Fora dos jogos, teclado, mouse e headset acompanham a tela (como a fita)",
+                            "Fuera de los juegos, teclado, ratón y auriculares siguen la pantalla (como la tira)"),
+    # ---- Euro Truck / ATS: route advisor and compass gone, job pay and cargo damage in
+    "ets2.cargo": ("Cargo damage", "Dano da carga", "Daño de la carga"),
+    "ets2.income": ("Job pay", "Frete", "Pago"),
 }
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))

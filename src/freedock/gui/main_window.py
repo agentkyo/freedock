@@ -226,6 +226,9 @@ class SettingsDialog(QDialog):
         self.g_native = QCheckBox(tr("ui.game_native"))
         self.g_native.setChecked("*" in (gc.get("native_chroma") or []))
         f4.addRow("", self.g_native)
+        self.g_idle = QCheckBox(tr("ui.game_idle_screen"))
+        self.g_idle.setChecked(gc.get("idle", "screen") == "screen")
+        f4.addRow("", self.g_idle)
         self.notify_form = f4
         tabs.addTab(notif, tr("ui.notifications"))
 
@@ -334,6 +337,7 @@ class SettingsDialog(QDialog):
         native = [t for t in ((s.game_lights or {}).get("native_chroma") or []) if t != "*"]
         s.game_lights = {**(s.game_lights or {}), "enabled": self.g_on.isChecked(),
                          "strip": self.g_strip.currentData(),
+                         "idle": "screen" if self.g_idle.isChecked() else "off",
                          "native_chroma": native + (["*"] if self.g_native.isChecked() else [])}
         self.sound_tab.apply()
         s.save()

@@ -98,3 +98,27 @@ def test_game_does_not_undo_a_sleep_the_user_asked_for():
     assert e._asleep
     e._keep_awake_for_games(False)
     assert e._asleep
+
+
+def test_live_values_swap_without_animation():
+    """A key whose value ticks every second (speed, game clock) must not slide/fade on every tick."""
+    from PySide6.QtGui import QImage
+
+    from freedock.engine import CHANGE_CALM_S, SLOTS
+    from freedock.render.painter import Visual
+    e = _engine()
+    e.profile.animations = True
+    ref = SLOTS[0]
+    e._looks[ref.key] = {"change": "slide"}
+    img = QImage(8, 8, QImage.Format.Format_RGB32)
+    e.images[ref.key] = img
+    t = 1000.0
+    e._content_change(ref, Visual(value="1"), img, t)
+    e._content_change(ref, Visual(value="2"), img, t + CHANGE_CALM_S + 1)     # after a calm spell: animates
+    assert ref.key in e._changes
+    e._changes.clear()
+    e._content_change(ref, Visual(value="3"), img, t + CHANGE_CALM_S + 2)     # 1 s later: live data, swap
+    assert ref.key not in e._changes
+    e._content_change(ref, Visual(value="3"), img, t + 3 * CHANGE_CALM_S)     # unchanged: nothing
+    e._content_change(ref, Visual(value="4"), img, t + 5 * CHANGE_CALM_S)     # calm again: animates
+    assert ref.key in e._changes

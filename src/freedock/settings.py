@@ -36,7 +36,7 @@ class Settings:
     # game lighting (integrations/game_lights.py): strip = events | theme | off; native_chroma = theme ids
     # whose own Chroma effects keep the keyboard; off = theme ids never shown
     game_lights: dict[str, Any] = field(default_factory=lambda: {
-        "enabled": True, "strip": "events", "native_chroma": [], "off": []})
+        "enabled": True, "strip": "events", "native_chroma": [], "off": [], "idle": "screen"})
     cs2: dict[str, Any] = field(default_factory=lambda: {"port": 47812, "token": ""})
     soundboard: dict[str, Any] = field(default_factory=lambda: {
         "cable": "", "mic": "", "passthrough": True, "monitor": False, "monitor_volume": 0.6,

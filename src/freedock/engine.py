@@ -43,6 +43,7 @@ MENU_TIMEOUT_S = 10.0
 BANNER_S = 1.3
 TRANSITION_S = 0.42
 CHANGE_S = 0.28            # content change transition (value/icon/label), see style "change"
+CHANGE_CALM_S = 4.0        # a slot that changed less than this ago is live data (speed, game clock): swap, no animation
 ANIM_FPS = 20              # animations advance at most this often per key (USB budget)
 EMPTY = Visual(bg="#0a0c11", fg="#3a4252")
 
@@ -147,6 +148,7 @@ class Engine(QObject):
         self._looks: dict[str, dict] = {}            # merged style per slot key, from the last frame
         self._content: dict[str, tuple] = {}         # what each slot showed, to spot changes
         self._changes: dict[str, tuple] = {}         # key -> (old image, t0, mode) while cross-fading
+        self._changed_at: dict[str, float] = {}      # key -> when its content last changed
         self._menu: dict | None = None          # {"t0", "sel", "offset"} while the page menu is open
         self._banner_t0: float = -1.0
         self._announce: dict | None = None       # strip-wide announcement (notifications)
@@ -745,7 +747,8 @@ class Engine(QObject):
                 needs.add("assetto")
             if "rgb_shift_lights" in page.effects:
                 needs.update(("lights", "assetto", "ets2", "beamng"))
-        if (self.settings.notify or {}).get("lights", True) or (self.settings.game_lights or {}).get("enabled", True):
+        gcfg = self.settings.game_lights or {}
+        if (self.settings.notify or {}).get("lights", True) or gcfg.get("enabled", True) or                 gcfg.get("idle", "screen") == "screen":
             needs.add("lights")
         if "stats" in needs and "stats" not in self._started:
             from .integrations.system_stats import stats
@@ -887,9 +890,13 @@ class Engine(QObject):
         old_sig = self._content.get(ref.key)
         self._content[ref.key] = sig
         mode = self._looks.get(ref.key, {}).get("change") or "none"
-        if (old_sig is not None and sig != old_sig and mode != "none" and self.profile.animations
-                and ref.key in self.images):
-            self._changes[ref.key] = (self.images[ref.key], now, mode)
+        if old_sig is not None and sig != old_sig:
+            calm = now - self._changed_at.get(ref.key, -CHANGE_CALM_S) >= CHANGE_CALM_S
+            self._changed_at[ref.key] = now
+            if not calm:                          # live data: an animation per tick turns the deck into noise
+                self._changes.pop(ref.key, None)
+            elif mode != "none" and self.profile.animations and ref.key in self.images:
+                self._changes[ref.key] = (self.images[ref.key], now, mode)
         ch = self._changes.get(ref.key)
         if ch is None:
             return img

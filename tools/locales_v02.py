@@ -51,7 +51,6 @@ EXTRA = {
     "ets2.damage": ("Truck damage", "Dano do caminhão", "Daño del camión"),
     "ets2.job": ("Delivery", "Entrega", "Entrega"),
     "ets2.no_job": ("No job", "Sem carga", "Sin carga"),
-    "ets2.nav": ("Route", "Rota", "Ruta"),
     "ets2.rest": ("Rest in", "Descanso em", "Descanso en"),
     "ets2.clock": ("Game time", "Hora do jogo", "Hora del juego"),
     "ets2.limit": ("Speed limit", "Limite", "Límite"),

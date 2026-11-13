@@ -4,10 +4,8 @@ EXTRA3 = {
     # key: (en, pt, es)
     "cat.sound": ("Sounds", "Sons", "Sonidos"),
     "ets2.engine_brake": ("Engine brake", "Freio motor", "Freno motor"),
-    "ets2.trip": ("Trip", "Viagem", "Viaje"),
     "ets2.deadline": ("Deliver in", "Entregar em", "Entregar en"),
     "ets2.late": ("Late", "Atrasado", "Atrasado"),
-    "ets2.compass": ("Heading", "Rumo", "Rumbo"),
     "ets2.fatigue": ("Fatigue", "Fadiga", "Fatiga"),
     "ui.save": ("Save", "Salvar", "Guardar"),
     "ui.saved": ("Saved ✓", "Salvo ✓", "Guardado ✓"),

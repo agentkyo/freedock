@@ -42,6 +42,12 @@ animation (`static breathe wave aurora embers split pulse scan`) and key highlig
 **Games with their own Chroma effects** (Tetris Effect; any game if you tick *Let the game's own
 Chroma effects keep the keyboard*): FreeDock leaves the keyboard to the game and only adds the strip.
 
+**When no game is running**, the keyboard turns into a small copy of the screen, the same picture the
+strip's ambilight follows: mouse, mousepad and headset take its average color. A dark screen never
+turns the keyboard off (keys keep a dim glow in the picture's hue). FreeDock samples the primary
+monitor with GDI at 15 fps on its own thread (about 5 ms of CPU per frame). Untick *When not playing,
+the keyboard, mouse and headset follow the screen* to leave them to Synapse.
+
 The *RGB lights* action has a **Game theme** operation to preview or pin a theme without the game.
 
 ## Counter-Strike 2

@@ -425,10 +425,10 @@ def _ai(e, s, c, v):
 
 # --------------------------------------------------------------------------- Euro Truck / American Truck Simulator
 ETS2_METRICS = tuple((m, f"ets2.{m}") for m in (
-    "speed", "gear", "rpm", "cruise", "fuel", "range", "damage", "job", "nav", "rest", "clock", "limit",
+    "speed", "gear", "rpm", "cruise", "fuel", "range", "damage", "cargo", "job", "income", "rest", "clock", "limit",
     "parking_brake", "lights_low", "lights_high", "beacon", "hazard", "engine_on", "diff_lock", "lift_axle",
     "retarder", "trailer_attached", "wipers", "blinker_left", "blinker_right", "adblue", "engine_brake",
-    "trip", "deadline", "compass", "fatigue"))
+    "deadline", "fatigue"))
 ETS2_STATES = {"parking_brake": "#ef4444", "lights_low": "#22c55e", "lights_high": "#3b82f6", "beacon": "#f59e0b",
                "hazard": "#f97316", "engine_on": "#22c55e", "diff_lock": "#a855f7", "lift_axle": "#38bdf8",
                "trailer_attached": "#22c55e", "wipers": "#38bdf8", "blinker_left": "#22c55e",
@@ -436,6 +436,16 @@ ETS2_STATES = {"parking_brake": "#ef4444", "lights_low": "#22c55e", "lights_high
 
 
 FATIGUE_FULL_MIN = 660     # a full night's sleep in ETS2/ATS gives ~11 h of driving before the next rest
+
+
+def fmt_money(amount: float, symbol: str) -> str:
+    """Job pay on a key: ``€8,450`` / ``€18.4k`` / ``€1.2M`` - fits a 4-5 character slot."""
+    a = abs(amount)
+    if a >= 1_000_000:
+        return f"{symbol}{amount / 1_000_000:.1f}M"
+    if a >= 10_000:
+        return f"{symbol}{amount / 1000:.1f}k"
+    return f"{symbol}{amount:,.0f}"
 
 
 def _fmt_min(minutes: float | None) -> str:
@@ -499,21 +509,20 @@ def _ets2(e, s, c, v):
             return v.with_(icon=v.icon or "package", label=tr("ets2.no_job"), dim=0.2)
         return v.with_(value=str(job.get("dest_city") or "?")[:14], sub=str(job.get("cargo") or "")[:18], label="",
                        icon=v.icon or "package")
-    if m == "nav":
-        km = d.get("nav_distance_km")
-        return v.with_(value=f"{km:.0f} km" if km else "--", sub=_fmt_min(d.get("nav_time_min")), mono=True,
-                       label="", icon=v.icon or "navigation")
-    if m == "trip":      # route advisor: km left, arrival clock, share of the job already driven
-        km = d.get("nav_distance_km")
-        if not km:
-            return v.with_(value="--", sub=tr("ets2.trip"), mono=True, label="", icon=v.icon or "navigation", dim=0.4)
-        eta = d.get("eta_clock")
-        near = km < 2
-        return v.with_(value=f"{km:.1f} km" if km < 10 else f"{km:.0f} km",
-                       sub=f"{_fmt_min(d.get('nav_time_min'))} · {eta.split()[-1]}" if eta else _fmt_min(
-                           d.get("nav_time_min")),
-                       mono=True, label="", icon=v.icon or "navigation", progress=d.get("trip_progress"),
-                       progress_style="bar", accent="#22c55e" if near else v.accent, anim="pulse" if near else None)
+    if m == "cargo":     # cargo damage: what the delivery will be docked for
+        if not d.get("job"):
+            return v.with_(value="--", sub=tr("ets2.cargo"), mono=True, label="", icon=v.icon or "package-x", dim=0.4)
+        frac = max(d.get("cargo_damage") or 0, 0)
+        return v.with_(value=f"{frac * 100:.0f}%", sub=tr("ets2.cargo"), mono=True, label="",
+                       icon=v.icon or "package-x", progress=frac, accent=_load_color(min(1.0, frac * 5)),
+                       anim="pulse" if frac >= 0.1 else None)
+    if m == "income":    # what the job pays
+        pay = (d.get("job") or {}).get("income")
+        if not pay:
+            return v.with_(value="--", sub=tr("ets2.income"), mono=True, label="", icon=v.icon or "banknote",
+                           dim=0.4)
+        return v.with_(value=fmt_money(pay, "$" if d.get("game") == "ats" else "€"), sub=tr("ets2.income"),
+                       mono=True, label="", icon=v.icon or "banknote", accent="#22c55e")
     if m == "deadline":  # delivery deadline in game time; amber under 2 h, red and pulsing when late
         job = d.get("job") or {}
         left = job.get("deadline_min")
@@ -525,11 +534,6 @@ def _ets2(e, s, c, v):
         return v.with_(value=("-" if late else "") + _fmt_min(abs(left)), sub=tr("ets2.late" if late else "ets2.deadline"),
                        mono=True, label="", icon=v.icon or "timer", accent=color, active=late,
                        anim="pulse" if late else None)
-    if m == "compass":
-        from .integrations.ets2 import compass
-        deg = d.get("heading_deg")
-        return v.with_(value=compass(deg), sub=f"{deg:.0f}°" if deg is not None else "", mono=True, label="",
-                       icon=v.icon or "compass")
     if m == "rest":
         mins = d.get("rest_stop_min")
         tired = mins is not None and mins < 60

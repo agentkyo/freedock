@@ -29,15 +29,12 @@ def _buf() -> bytearray:
     struct.pack_into("<f", b, 1012, 55.0)               # adblue
     struct.pack_into("<f", b, 1044, 0.07)               # wearCabin (max wear)
     struct.pack_into("<f", b, 1052, 0.02)               # wearWheels
-    struct.pack_into("<f", b, 1060, 12_500.0)           # routeDistance m
-    struct.pack_into("<f", b, 1064, 600.0)              # routeTime s
     struct.pack_into("<f", b, 1068, 25.0)               # speedLimit m/s
     struct.pack_into("<f", b, 1468, 0.015)              # job cargoDamage
     for off in (1566, 1575, 1576, 1578, 1583, 1585, 1589, 1608, 4300, 6080):
         b[off] = 1          # parkBrake electric engine blinkerL lowBeam beacon cruise diffLock onJob attached
     for off, s in ((2364, "Kenworth"), (2492, "W900"), (2620, "Lumber"), (2748, "Reno"), (3004, "Sacramento")):
         b[off:off + len(s)] = s.encode()
-    struct.pack_into("<d", b, 2224, 0.25)               # truck_dp.rotationX: heading west
     struct.pack_into("<Q", b, 4000, 18_450)             # jobIncome
     return b
 
@@ -58,15 +55,48 @@ def test_decode_synthetic_buffer():
     assert d["job"] == {"cargo": "Lumber", "source_city": "Sacramento", "source_company": "",
                         "dest_city": "Reno", "dest_company": "", "income": 18450, "planned_km": 352,
                         "deadline_min": 235}
-    assert abs(d["nav_distance_km"] - 12.5) < 1e-6 and abs(d["nav_time_min"] - 10.0) < 1e-6
     assert d["rest_stop_min"] == 365 and d["game_clock"] == "Tue 14:05"
-    assert d["eta_clock"] == "Tue 14:15" and abs(d["trip_progress"] - (1 - 12.5 / 352)) < 1e-6
-    assert abs(d["heading_deg"] - 270.0) < 1e-6 and ets2.compass(d["heading_deg"]) == "W"
+    # 0.4: no route advisor / heading any more - they kept the keys redrawing nonstop
+    assert not {"nav_distance_km", "nav_time_min", "eta_clock", "trip_progress", "heading_deg"} & set(d)
 
 
-def test_compass_labels():
-    assert [ets2.compass(x) for x in (0, 44, 46, 90, 180, 359, 337.6)] == ["N", "NE", "NE", "E", "S", "N", "N"]
-    assert ets2.compass(None) == "--"
+def test_money_fits_a_key():
+    from freedock.widgets import fmt_money
+    assert fmt_money(8450, "€") == "€8,450" and fmt_money(18_450, "€") == "€18.4k"
+    assert fmt_money(1_234_567, "$") == "$1.2M" and fmt_money(0, "€") == "€0"
+
+
+def test_no_gps_metrics_left():
+    from freedock.presets import ETS2_GPS_METRICS, build_default_profile
+    from freedock.widgets import ETS2_METRICS
+    assert not ETS2_GPS_METRICS & {m for m, _ in ETS2_METRICS}
+    prof = build_default_profile("pt")
+    for page in prof.pages:
+        for slot in [*page.keys, *page.zones]:
+            assert (slot.widget or {}).get("metric") not in ETS2_GPS_METRICS, page.id
+    assert "ets2-nogps" in prof.seen_presets
+
+
+def test_saved_profile_loses_the_gps_once():
+    from freedock.presets import add_new_presets, build_default_profile
+    from freedock.profile import Profile, Slot
+    prof = build_default_profile("pt")
+    old = Profile.from_dict(prof.to_dict())          # a 0.3 profile with the route advisor and compass
+    old.seen_presets.remove("ets2-nogps")
+    old.page("ets2").style["change"] = "slide"
+    old.page("ets2").zones[2] = Slot(widget={"type": "ets2", "metric": "trip"}, action={"type": "ets2_binding",
+                                                                                       "binding": "navmap"})
+    trip = old.page("ets2_trip")
+    trip.keys[2] = Slot(widget={"type": "ets2", "metric": "trip"})
+    trip.keys[3] = Slot(widget={"type": "ets2", "metric": "compass"})
+    old.page("daily").keys[0] = Slot(label="Mine", widget={"type": "ets2", "metric": "nav"})
+    assert add_new_presets(old, "pt") is True
+    assert old.page("ets2").zones[2].widget == {"type": "ets2", "metric": "diff_lock"}
+    assert old.page("ets2").zones[2].action == {"type": "ets2_binding", "binding": "diflock"}
+    assert old.page("ets2").style["change"] == "fade"
+    assert [s.widget["metric"] for s in trip.keys[2:4]] == ["cargo", "income"]
+    assert old.page("daily").keys[0].label == "Mine" and old.page("daily").keys[0].widget["metric"] == "job"
+    assert add_new_presets(old, "pt") is False      # once
 
 
 def test_decode_inactive_or_stale():

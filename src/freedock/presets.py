@@ -303,7 +303,7 @@ def build_default_profile(lang: str) -> Profile:
                      {"process": "FlightSimulator2024.exe", "page": "msfs"},
                      {"process": "FlightSimulator.exe", "page": "msfs"}, *NEW_RULES],
         idle_minutes=15, idle_mode="clock",
-        seen_presets=["daily", "windows", "assetto", "msfs", "msfs2", *NEW_PAGES, "assetto+rgb", "daily+audio_out"])
+        seen_presets=["daily", "windows", "assetto", "msfs", "msfs2", *NEW_PAGES, "assetto+rgb", "daily+audio_out", "ets2-nogps"])
 
 
 # --------------------------------------------------------------------------- upgrades
@@ -332,6 +332,12 @@ def add_new_presets(profile: Profile, lang: str) -> bool:
             page.zones[1] = audio_output_zone()
         if page and len(page.knobs) > 1 and (page.knobs[1].left or {}).get("type") == "brightness"                 and (page.knobs[1].right or {}).get("type") == "brightness":
             page.knobs[1] = audio_output_knob()
+    # 0.4: no more route advisor / compass on the truck pages - live distance and heading kept the keys
+    # redrawing nonstop. Their slots get the new ones; any other copy falls back to the job.
+    if "ets2-nogps" not in profile.seen_presets:
+        profile.seen_presets.append("ets2-nogps")
+        changed = True
+        _drop_ets2_gps(profile, lang)
     # 0.2: the built-in Assetto page also drives RGB shift lights
     if "assetto+rgb" not in profile.seen_presets:
         profile.seen_presets.append("assetto+rgb")
@@ -340,6 +346,31 @@ def add_new_presets(profile: Profile, lang: str) -> bool:
         if page and "ac_shift_lights" in page.effects and "rgb_shift_lights" not in page.effects:
             page.effects.append("rgb_shift_lights")
     return changed
+
+
+ETS2_GPS_METRICS = {"nav", "trip", "compass"}
+
+
+def _drop_ets2_gps(profile: Profile, lang: str) -> None:
+    dash = st("#0b0f19", "#151b2b", "#38bdf8")
+    stock = {("ets2", "zones", 2): lambda: ets2_diff_lock_slot(lang),
+             ("ets2_trip", "keys", 2): lambda: Slot(widget=w("ets2", metric="cargo"), style=dash),
+             ("ets2_trip", "keys", 3): lambda: Slot(widget=w("ets2", metric="income"), action=e2("navmap"),
+                                                    style=dash)}
+    for page in profile.pages:
+        if page.id in ("ets2", "ets2_trip") and page.style.get("change") == "slide":
+            page.style["change"] = "fade"
+        for row in ("keys", "zones"):
+            slots = getattr(page, row)
+            for i, slot in enumerate(slots):
+                wd = slot.widget or {}
+                if wd.get("type") != "ets2" or wd.get("metric") not in ETS2_GPS_METRICS:
+                    continue
+                make = stock.get((page.id, row, i))
+                if make:
+                    slots[i] = make()
+                else:
+                    slot.widget = {**wd, "metric": "job"}
 
 
 def _is_stock_brightness_zone(slot: Slot) -> bool:
@@ -369,6 +400,7 @@ L.update({
     "high_beam": {"en": "High beam", "pt": "Farol alto", "es": "Luz larga"},
     "trailer": {"en": "Trailer", "pt": "Carreta", "es": "Remolque"},
     "engine_brake": {"en": "Engine brake", "pt": "Freio motor", "es": "Freno motor"},
+    "diff_lock": {"en": "Diff lock", "pt": "Bloqueio dif.", "es": "Bloqueo dif."},
 })
 
 
@@ -391,7 +423,7 @@ PAGE_NAME_ZONE_STYLE = st("#1e1b4b", "#0b0a1f", "#818cf8")
 def ets2(lang: str) -> Page:
     """Cab page: what you touch while driving. Blinkers flash in sync with the dashboard lamps."""
     p = Page(id="ets2", name=_t(lang, "ets2"), icon="truck", accent="#f59e0b", effects=["rgb_shift_lights"],
-             style={"change": "slide"})
+             style={"change": "fade"})
     dash = st("#0b0f19", "#151b2b", "#f59e0b")
     warm = st("#3a2a05", "#1a1302", "#facc15")
     p.keys = [
@@ -416,11 +448,17 @@ def ets2(lang: str) -> Page:
         Slot(widget=w("ets2", metric="cruise"), action=e2("cruiectrl"), style=dash),
         Slot(label=_t(lang, "engine_brake"), icon="gauge", widget=w("ets2", metric="engine_brake"),
              action=e2("engbraketog"), style=dash),
-        Slot(widget=w("ets2", metric="trip"), action=e2("navmap"), style=dash),
+        ets2_diff_lock_slot(lang),
         Slot(widget=w("page_name"), style=PAGE_NAME_ZONE_STYLE, action={"type": "page", "target": "menu"}),
     ]
     p.knobs = _ets2_knobs()
     return p
+
+
+def ets2_diff_lock_slot(lang: str) -> Slot:
+    """Diff lock (long press: lift axle) - took the route advisor's place in 0.4."""
+    return Slot(label=_t(lang, "diff_lock"), icon="lock", action=e2("diflock"), long_action=e2("liftaxle"),
+                widget=w("ets2", metric="diff_lock"), style=st("#1e1033", "#0e0819", "#a855f7"))
 
 
 def _ets2_knobs() -> list[Knob]:
@@ -433,15 +471,15 @@ def _ets2_knobs() -> list[Knob]:
 
 
 def ets2_trip(lang: str) -> Page:
-    """Trip page: the job, the route advisor and the driver - the SCS SDK has no turn-by-turn data."""
+    """Trip page: the job (pay, deadline, cargo damage), the truck and the driver."""
     p = Page(id="ets2_trip", name=_t(lang, "ets2_trip"), icon="map", accent="#38bdf8", effects=["rgb_shift_lights"],
-             style={"change": "slide"})
+             style={"change": "fade"})
     dash = st("#0b0f19", "#151b2b", "#38bdf8")
     p.keys = [
         Slot(widget=w("ets2", metric="job"), action=e2("navmap"), style=dash),
         Slot(widget=w("ets2", metric="deadline"), style=dash),
-        Slot(widget=w("ets2", metric="trip"), action=e2("advmouse"), style=dash),
-        Slot(widget=w("ets2", metric="compass"), style=dash),
+        Slot(widget=w("ets2", metric="cargo"), style=dash),
+        Slot(widget=w("ets2", metric="income"), action=e2("navmap"), style=dash),
         Slot(widget=w("ets2", metric="clock"), style=dash),
         Slot(widget=w("ets2", metric="adblue"), style=dash),
         Slot(widget=w("ets2", metric="damage"), style=dash),
