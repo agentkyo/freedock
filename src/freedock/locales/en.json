@@ -409,6 +409,7 @@
  "ui.game_lights": "Game lighting",
  "ui.game_lights_on": "Themes and effects while you play (keyboard, mouse, headset, strip)",
  "ui.game_native": "Let the game's own Chroma effects keep the keyboard",
+ "ui.game_rev_strip": "Rev bar on the LED strip too (replaces the ambilight while you drive)",
  "ui.game_strip": "LED strip while playing",
  "ui.game_strip.events": "Ambilight, taken only for game moments (bomb, kills, flashes)",
  "ui.game_strip.off": "Never (ambilight only)",

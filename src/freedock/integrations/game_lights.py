@@ -7,8 +7,10 @@ Layers, bottom to top:
 Notification flashes from FreeDock (AI assistants...) still play over all of it.
 
 The strip is the user's ambilight while gaming, so by default (strip mode "events") a scene only
-takes it for the moments that matter - the C4 countdown, a flashbang, a kill, the round end, shift
-lights - and gives it back right after. "theme" keeps the theme on it the whole time, "off" never
+takes it for the moments that matter - the C4 countdown, a flashbang, a kill, the round end - and
+gives it back right after. The rev bar of racing pages stays on the keyboard; it only takes the strip
+with "rev_strip" on (it used to by default, and replaced the ambilight for the whole drive). Truck
+blinkers are left to Ambibox LED when it paints them itself (0.4+, over the ambilight). "theme" keeps the theme on it the whole time, "off" never
 touches it. Games that drive Razer Chroma themselves (native_chroma) keep the keyboard; FreeDock then
 only adds the strip.
 
@@ -27,7 +29,8 @@ from .scenes import Effect, Frame, Theme
 log = logging.getLogger(__name__)
 
 FPS = 25.0
-DEFAULTS = {"enabled": True, "strip": "events", "native_chroma": [], "off": [], "idle": "screen"}
+DEFAULTS = {"enabled": True, "strip": "events", "native_chroma": [], "off": [], "idle": "screen",
+            "rev_strip": False}
 GLOW_EVERY_S = 0.25          # screen sync: mouse / headset color at most 4 times a second
 
 
@@ -169,10 +172,12 @@ class GameLights:
         if truck and truck.get("connected"):
             left = truck.get("blinker_left_lamp") or (truck.get("hazard") and truck.get("blinker_right_lamp"))
             right = truck.get("blinker_right_lamp") or (truck.get("hazard") and truck.get("blinker_left_lamp"))
-            scenes.blinker_overlay(frame, bool(left), bool(right), n_leds if strip_always else None,
+            own = getattr(self.lights, "strip_truck_lights", None)
+            on_strip = strip_always and not (own is not None and own())
+            scenes.blinker_overlay(frame, bool(left), bool(right), n_leds if on_strip else None,
                                    beacon=bool(truck.get("beacon")), now=now)
         if shift is not None:
-            scenes.shift_overlay(frame, shift, n_leds, now)
+            scenes.shift_overlay(frame, shift, n_leds if self.cfg.get("rev_strip") and mode != "off" else None, now)
         if self.effects:
             if frame.strip is None and any(e.strip for e in self.effects):
                 frame.strip = [scenes.BLACK] * n_leds if mode != "off" else None

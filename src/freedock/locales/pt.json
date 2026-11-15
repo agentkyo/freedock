@@ -409,6 +409,7 @@
  "ui.game_lights": "Iluminação dos jogos",
  "ui.game_lights_on": "Temas e efeitos enquanto você joga (teclado, mouse, headset, fita)",
  "ui.game_native": "Deixar os efeitos Chroma do próprio jogo no teclado",
+ "ui.game_rev_strip": "Barra de giro também na fita de LED (substitui o ambilight enquanto você dirige)",
  "ui.game_strip": "Fita de LED durante o jogo",
  "ui.game_strip.events": "Ambilight, só assume nos momentos do jogo (bomba, kills, flash)",
  "ui.game_strip.off": "Nunca (só ambilight)",

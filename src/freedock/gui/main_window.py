@@ -223,6 +223,9 @@ class SettingsDialog(QDialog):
             self.g_strip.addItem(tr(f"ui.game_strip.{mode}"), mode)
         self.g_strip.setCurrentIndex(max(0, self.g_strip.findData(gc.get("strip", "events"))))
         f4.addRow(tr("ui.game_strip"), self.g_strip)
+        self.g_rev = QCheckBox(tr("ui.game_rev_strip"))
+        self.g_rev.setChecked(bool(gc.get("rev_strip", False)))
+        f4.addRow("", self.g_rev)
         self.g_native = QCheckBox(tr("ui.game_native"))
         self.g_native.setChecked("*" in (gc.get("native_chroma") or []))
         f4.addRow("", self.g_native)
@@ -336,7 +339,7 @@ class SettingsDialog(QDialog):
                       "chroma": self.l_chroma.isChecked()}
         native = [t for t in ((s.game_lights or {}).get("native_chroma") or []) if t != "*"]
         s.game_lights = {**(s.game_lights or {}), "enabled": self.g_on.isChecked(),
-                         "strip": self.g_strip.currentData(),
+                         "strip": self.g_strip.currentData(), "rev_strip": self.g_rev.isChecked(),
                          "idle": "screen" if self.g_idle.isChecked() else "off",
                          "native_chroma": native + (["*"] if self.g_native.isChecked() else [])}
         self.sound_tab.apply()

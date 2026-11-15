@@ -35,9 +35,20 @@ animation (`static breathe wave aurora embers split pulse scan`) and key highlig
 
 | Mode | What the strip does |
 | --- | --- |
-| Ambilight, taken only for game moments *(default)* | stays your ambilight; FreeDock borrows it for the C4 countdown, flashbangs, kills, the round end and shift lights, then gives it back |
+| Ambilight, taken only for game moments *(default)* | stays your ambilight; FreeDock borrows it for the C4 countdown, flashbangs, kills and the round end, then gives it back |
 | Always the game's theme | the theme on the strip the whole time |
 | Never | ambilight only |
+
+**Rev bar.** On racing and truck pages the rev bar lights the keyboard's F-row. It no longer takes
+the strip by default: at low revs it left the strip dark for the whole drive, in place of the
+ambilight. Tick *Rev bar on the LED strip too* to get the old behavior back.
+
+**With Ambibox LED 0.4 or newer**, what FreeDock sends is drawn over the running ambilight (the
+screen capture no longer restarts around every flash), and in Euro Truck / American Truck Simulator
+Ambibox LED paints the blinkers, hazards, high beams and beacon itself, over the picture of the
+screen. FreeDock then leaves those to it, also in *Always the game's theme*, and keeps drawing them
+on the keyboard. Each app still works without the other: FreeDock drives the strip directly when
+Ambibox LED is closed, and Ambibox LED reads the game by itself.
 
 **Games with their own Chroma effects** (Tetris Effect; any game if you tick *Let the game's own
 Chroma effects keep the keyboard*): FreeDock leaves the keyboard to the game and only adds the strip.

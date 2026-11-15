@@ -409,6 +409,7 @@
  "ui.game_lights": "Iluminación de juegos",
  "ui.game_lights_on": "Temas y efectos mientras juegas (teclado, ratón, auriculares, tira)",
  "ui.game_native": "Dejar los efectos Chroma del propio juego en el teclado",
+ "ui.game_rev_strip": "Barra de revoluciones también en la tira LED (sustituye al ambilight mientras conduces)",
  "ui.game_strip": "Tira LED al jugar",
  "ui.game_strip.events": "Ambilight, solo en momentos del juego (bomba, bajas, flashes)",
  "ui.game_strip.off": "Nunca (solo ambilight)",

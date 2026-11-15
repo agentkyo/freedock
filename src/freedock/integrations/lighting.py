@@ -168,6 +168,7 @@ def effect_index(name_or_index: str | int) -> int:
 
 TRAY_HOST, TRAY_PORT = "127.0.0.1", 47811
 TRAY_MUTEX = "AmbiboxLED"
+SOURCE = "freedock"
 LEDS_TTL_MS = 2000          # tray falls back to its own mode if frames stop for this long
 KEEPALIVE_S = 0.8           # resend a still frame this often so the tray ttl never runs out
 STRIP_FPS = 30.0
@@ -216,7 +217,8 @@ class UdpTransport:
 
     def send(self, command: dict) -> None:
         try:
-            self._socket().sendto(json.dumps(command, separators=(",", ":")).encode(), self.addr)
+            # "source" lets Ambibox LED's panel show which app is using the strip (0.4.0+; older ones ignore it)
+            self._socket().sendto(json.dumps({**command, "source": SOURCE}, separators=(",", ":")).encode(), self.addr)
         except OSError as exc:
             log.debug("strip: send failed: %s", exc)
 
@@ -230,7 +232,7 @@ class UdpTransport:
             pass
         try:
             sock.settimeout(timeout)
-            sock.sendto(json.dumps(command).encode(), self.addr)
+            sock.sendto(json.dumps({**command, "source": SOURCE}).encode(), self.addr)
             data, _ = sock.recvfrom(65535)
             reply = json.loads(data)
             return reply if isinstance(reply, dict) else None
@@ -413,6 +415,7 @@ class AmbiboxStrip(_Worker):
         self._direct: DirectStrip | None = None
         self.mode = "unknown"
         self.tray_count: int | None = None
+        self.tray_truck_lights = False        # Ambibox LED 0.4+ paints blinkers / high beams itself
         self.interval = 1.0 / fps
         self._queue: deque[dict] = deque(maxlen=32)
         self._frame: dict | None = None       # newest color/leds command not sent yet
@@ -541,14 +544,18 @@ class AmbiboxStrip(_Worker):
             if reply is not None:
                 count = reply.get("count")
                 self.tray_count = count if isinstance(count, int) and count > 0 else None
+                fx = reply.get("fx")
+                self.tray_truck_lights = isinstance(fx, dict) and bool(fx.get("enabled"))
                 self._set_mode("tray")
                 self._next_detect = now + 5.0
             else:
                 self.tray_count = None
+                self.tray_truck_lights = False
                 self._set_mode("tray-busy")
                 self._next_detect = now + 3.0
         else:
             self.tray_count = None
+            self.tray_truck_lights = False
             if self._direct is not None and self._direct.is_open:
                 self._set_mode("direct")
             else:
@@ -1063,6 +1070,12 @@ class Lights:
             strip.restore()
         if chroma:
             chroma.release()
+
+    def strip_truck_lights(self) -> bool:
+        """True while Ambibox LED itself paints the truck's blinkers and beams over its ambilight
+        (0.4.0+, game effects on). FreeDock then leaves those to it instead of drawing them twice."""
+        strip = self._strip
+        return bool(strip is not None and self.strip_enabled and strip.tray_truck_lights)
 
     def status(self) -> dict:
         strip = self._get_strip()

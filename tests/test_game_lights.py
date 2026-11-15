@@ -168,13 +168,35 @@ def test_director_turns_cs2_events_into_effects():
     assert any(e.kind == "flash" for e in gl.effects)
 
 
-def test_shift_lights_without_a_theme_draw_the_old_rev_bar():
+def test_rev_bar_stays_on_the_keyboard_unless_asked_onto_the_strip():
     fl = FakeLights()
     gl = GameLights(fl)
     gl.tick(0.0, shift=0.5, n_leds=20)
     kb, strip, _ = fl.scenes[-1]
-    assert strip is not None and strip[0] == hexc("#22c55e") and strip[10] == BLACK
+    assert strip is None                                        # the ambilight keeps the strip
     assert kb[0][3] == hexc("#22c55e")                          # F1 lit
+    gl.configure({"rev_strip": True})
+    gl.tick(1.0, shift=0.5, n_leds=20)
+    kb, strip, _ = fl.scenes[-1]
+    assert strip is not None and strip[0] == hexc("#22c55e") and strip[10] == BLACK
+    gl.configure({"rev_strip": True, "strip": "off"})
+    gl.tick(2.0, shift=0.5, n_leds=20)
+    assert fl.scenes[-1][1] is None
+
+
+def test_truck_blinkers_are_left_to_ambibox_when_it_paints_them():
+    truck = {"connected": True, "blinker_left_lamp": True}
+    fl = FakeLights()
+    gl = GameLights(fl)
+    gl.configure({"strip": "theme"})
+    gl.set_games({"eurotrucks2.exe"}, "eurotrucks2.exe")
+    gl.tick(0.0, n_leds=30, truck=truck)
+    amber = hexc("#ffb000")
+    assert fl.scenes[-1][1][0] == amber                         # FreeDock draws the blinker itself
+    fl.strip_truck_lights = lambda: True                        # Ambibox LED 0.4 with game effects on
+    gl.tick(1.0, n_leds=30, truck=truck)
+    kb, strip, _ = fl.scenes[-1]
+    assert strip[0] != amber and kb[2][0] != BLACK              # keyboard still blinks, strip does not
 
 
 class Recorder:
