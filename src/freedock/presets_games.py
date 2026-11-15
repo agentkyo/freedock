@@ -216,3 +216,42 @@ NEW_RULES += [{"process": "AssettoCorsaEVO.exe", "page": "acevo"},
               {"process": "NSGP.exe", "page": "nsgp"},
               {"process": "NeedForSpeedHeat.exe", "page": "nfsheat"},
               {"process": "CityCarDriving2-Win64-Shipping.exe", "page": "ccd2"}]
+
+
+# --- EA SPORTS FC 26: a gamepad game. The deck drives IAmPcGamer (screenshot, overlay panel, hide or
+# return the wheel) through its global hotkeys, plus the Xbox Game Bar and the music.
+L.update({
+    "fc26": {"en": "FC 26", "pt": "FC 26", "es": "FC 26"},
+    "pg_panel": {"en": "Assistant", "pt": "Assistente", "es": "Asistente"},
+    "pg_wheel": {"en": "Wheel on/off", "pt": "Volante on/off", "es": "Volante on/off"},
+    "gamebar": {"en": "Game Bar", "pt": "Game Bar", "es": "Game Bar"},
+    "clip": {"en": "Record", "pt": "Gravar", "es": "Grabar"},
+    "last30": {"en": "Last 30 s", "pt": "Últimos 30 s", "es": "Últimos 30 s"},
+})
+PG_CAPTURE, PG_PANEL, PG_WHEEL = "ctrl+alt+f12", "ctrl+alt+f11", "ctrl+alt+f10"   # IAmPcGamer defaults
+
+
+def fc26(lang: str) -> Page:
+    p = Page(id="fc26", name=_t(lang, "fc26"), icon="trophy", accent="#22c55e", style={"change": "zoom"})
+    violet = st("#1e1033", "#0e0819", "#8b5cf6")
+    p.keys = [
+        Slot(label=_t(lang, "screenshot"), icon="camera", action=hk(PG_CAPTURE), style=violet),
+        Slot(label=_t(lang, "pg_panel"), icon="brain", action=hk(PG_PANEL), style=violet),
+        Slot(label=_t(lang, "pg_wheel"), icon="eye-off", action=hk(PG_WHEEL), style=violet),
+        Slot(label=_t(lang, "pause"), icon="pause", action=hk("esc"), style=RED),
+        Slot(label=_t(lang, "gamebar"), icon="gamepad-2", action=hk("win+g"), style=GREEN),
+        Slot(label=_t(lang, "clip"), icon="circle-dot", action=hk("win+alt+r"), style=RED),
+        Slot(label=_t(lang, "last30"), icon="history", action=hk("win+alt+g"), style=GREEN),
+        Slot(label=_t(lang, "music"), icon="play", action={"type": "media", "op": "playpause"}, style=SLATE),
+        Slot(icon="skip-back", action={"type": "media", "op": "prevtrack"}, style=SLATE),
+        Slot(icon="skip-forward", action={"type": "media", "op": "nexttrack"}, style=SLATE),
+    ]
+    p.zones = [Slot(widget=w("clock"), style=SLATE), Slot(widget=w("volume"), style=st("#14213d", "#0a1020")),
+               Slot(label=_t(lang, "screenshot"), icon="camera", action=hk(PG_CAPTURE), style=violet), _zone_name()]
+    p.knobs = [VOLUME, Knob(left={"type": "media", "op": "prevtrack"}, right={"type": "media", "op": "nexttrack"},
+                            press={"type": "media", "op": "playpause"}), Knob(press=hk(PG_PANEL)), _nav("fc26")]
+    return p
+
+
+NEW_PAGES["fc26"] = fc26
+NEW_RULES += [{"process": "FC26.exe", "page": "fc26"}]
