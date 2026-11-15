@@ -82,7 +82,7 @@ def test_new_pages_build_with_valid_keys_and_rules():
                     assert all(k2 in WIN_VK for k2 in parse_combo(a["keys"])), (pid, a)
     rules = {r["process"].lower(): r["page"] for r in presets.NEW_RULES}
     assert rules["motortown-win64-shipping.exe"] == "motortown" and rules["nsgp.exe"] == "nsgp"
-    assert rules["fc26.exe"] == "fc26" and rules["nfsc.exe"] == "nfsc" and rules["nfs.exe"] == "nfsps"
+    assert rules["fc26.exe"] == "fc26" and rules["nfsc.exe"] == "nfsc" and rules["nfs.exe"] == "nfsps" and rules["nfsps.exe"] == "nfsps"
     assert pg.NEW_PAGES is presets.NEW_PAGES
 
 
@@ -100,6 +100,6 @@ def test_existing_profile_gets_the_new_pages_once():
 def test_light_themes_for_the_new_games():
     for exe, tid in (("motortown-win64-shipping.exe", "motortown"), ("assettocorsaevo.exe", "acevo"),
                      ("nsgp.exe", "nsgp"), ("streetlegal_redline.exe", "slrr"), ("needforspeedheat.exe", "nfsheat"),
-                     ("citycardriving2-win64-shipping.exe", "ccd2"), ("nfsc.exe", "nfsc"), ("nfs.exe", "nfsps")):
+                     ("citycardriving2-win64-shipping.exe", "ccd2"), ("nfsc.exe", "nfsc"), ("nfs.exe", "nfsps"), ("nfsps.exe", "nfsps")):
         assert theme_for({exe}).id == tid
         assert THEMES[tid].page == tid

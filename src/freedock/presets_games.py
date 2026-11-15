@@ -326,4 +326,4 @@ def nfsps(lang: str) -> Page:
 
 
 NEW_PAGES.update({"nfsc": nfsc, "nfsps": nfsps})
-NEW_RULES += [{"process": "NFSC.exe", "page": "nfsc"}, {"process": "nfs.exe", "page": "nfsps"}]
+NEW_RULES += [{"process": "NFSC.exe", "page": "nfsc"}, {"process": "nfsps.exe", "page": "nfsps"}, {"process": "nfs.exe", "page": "nfsps"}]

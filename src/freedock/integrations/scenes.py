@@ -237,7 +237,7 @@ THEMES: dict[str, Theme] = {t.id: t for t in (
     Theme("nfsc", "Need for Speed Carbon", ("nfsc.exe",), "#0a0400", "#f97316", "#38bdf8", "embers", 0.8,
           {"arrows": "#f97316", "lalt": "#38bdf8", "x": "#a855f7", "space": "#ef4444", "rctrl": "#f97316",
            "lshift": "#22c55e", "lctrl": "#22c55e"}, page="nfsc"),
-    Theme("nfsps", "Need for Speed ProStreet", ("nfs.exe",), "#00080f", "#38bdf8", "#f8fafc", "scan", 1.0,
+    Theme("nfsps", "Need for Speed ProStreet", ("nfsps.exe", "nfs.exe"), "#00080f", "#38bdf8", "#f8fafc", "scan", 1.0,
           {"arrows": "#38bdf8", "lalt": "#38bdf8", "rctrl": "#ef4444", "space": "#facc15", "lshift": "#22c55e",
            "lctrl": "#22c55e"}, page="nfsps"),
     Theme("ccd2", "City Car Driving 2.0", ("citycardriving2-win64-shipping.exe",), "#06040f", "#a855f7",
