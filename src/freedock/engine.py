@@ -158,6 +158,8 @@ class Engine(QObject):
         self.attention_hooks: list = []          # callables(source, event, message) - lights, sounds...
         self._rgb_active = False
         self.game_lights = None                  # integrations.game_lights.GameLights, with the lights
+        from .integrations.span_window import WindowSpanner
+        self.span_window = WindowSpanner()       # ETS2/ATS window over every monitor (triple screens)
         self._http = HttpBridge(self, int((settings.notify or {}).get("http_port") or 0))
         self._swallow_up: int | None = None
         self._boot_t0: float = -1.0
@@ -847,6 +849,9 @@ class Engine(QObject):
         self._keep_awake_for_games(bool(running and known & running) or self._game_telemetry_live())
         if running is not None and self.game_lights is not None:
             self._detect_game(running)
+        span = getattr(self, "span_window", None)
+        if running is not None and span is not None:
+            span.update(running)
         if not rules or running is None:
             return
         hit = next((r for r in rules if r["process"].lower() in running), None)
