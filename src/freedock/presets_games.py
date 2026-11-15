@@ -4,6 +4,7 @@ Need for Speed Heat and City Car Driving 2.0.
 Keys fire each game's own default keyboard bindings (checked in the games' config files: Motor Town's
 GameUserSettings.ini, SLRR's control set, New Star GP's UserData.txt, City Car Driving's binding preset,
 the official NFS Heat manual). AC EVO's bindings live in a binary file, so its page is the dashboard only.
+Need for Speed Carbon and ProStreet use the PC default keys (the list NFS-XtendedInput documents).
 Registered in presets.NEW_PAGES, so existing profiles get them once, with their auto-switch rule.
 """
 from __future__ import annotations
@@ -255,3 +256,74 @@ def fc26(lang: str) -> Page:
 
 NEW_PAGES["fc26"] = fc26
 NEW_RULES += [{"process": "FC26.exe", "page": "fc26"}]
+
+
+# --- Need for Speed Carbon (2006) and ProStreet (2007): keys are the PC defaults (the same list MyWheel
+# types for the wheel buttons). Carbon: nitrous, speedbreaker, crew; ProStreet: nitrous, clutch, launch.
+# Both run with the V99 in DirectInput mode; IAmPcGamer draws the wheel and pedals over the game.
+L.update({
+    "nfsc": {"en": "NFS Carbon", "pt": "NFS Carbon", "es": "NFS Carbon"},
+    "nfsps": {"en": "ProStreet", "pt": "ProStreet", "es": "ProStreet"},
+    "speedbreaker": {"en": "Speedbreaker", "pt": "Speedbreaker", "es": "Speedbreaker"},
+    "crew": {"en": "Crew", "pt": "Equipe", "es": "Equipo"},
+    "ebrake": {"en": "E-brake", "pt": "Freio de mão", "es": "Freno de mano"},
+    "blacklist": {"en": "Territory", "pt": "Territórios", "es": "Territorios"},
+    "sms": {"en": "SMS", "pt": "SMS", "es": "SMS"},
+    "engage": {"en": "Start event", "pt": "Iniciar evento", "es": "Iniciar evento"},
+    "clutch": {"en": "Clutch", "pt": "Embreagem", "es": "Embrague"},
+    "pull_cam": {"en": "Pull camera", "pt": "Afastar câmera", "es": "Alejar cámara"},
+    "overlay_wheel": {"en": "Wheel HUD", "pt": "HUD volante", "es": "HUD volante"},
+})
+PG_WIDGETS = "ctrl+alt+f9"   # IAmPcGamer: overlays on/off (wheel and pedals over the game)
+NITRO = {"type": "hotkey", "keys": "alt", "hold_ms": 1200}   # nitrous burns while held: a short burst per press
+
+
+def nfsc(lang: str) -> Page:
+    p = Page(id="nfsc", name=_t(lang, "nfsc"), icon="flame", accent="#f97316", style={"change": "zoom"})
+    p.keys = [
+        Slot(label=_t(lang, "nitro"), icon="flame", action=NITRO, style=BLUE_),
+        Slot(label=_t(lang, "speedbreaker"), icon="timer", action=hk("x"), style=st("#1e1033", "#0e0819", "#a855f7")),
+        Slot(label=_t(lang, "crew"), icon="users", action=hk("rctrl"), style=ORANGE),
+        Slot(label=_t(lang, "look_back"), icon="rotate-ccw", action=hk("l"), style=SLATE),
+        Slot(label=_t(lang, "camera"), icon="camera", action=hk("c"), long_action=hk("p"), style=SLATE),
+        Slot(label=_t(lang, "map"), icon="map", action=hk("m"), style=SLATE),
+        Slot(label=_t(lang, "blacklist"), icon="list-ordered", action=hk("b"), style=RED),
+        Slot(label=_t(lang, "sms"), icon="message-square", action=hk("tab"), style=SLATE),
+        Slot(label=_t(lang, "engage"), icon="flag", action=hk("enter"), style=GREEN),
+        Slot(label=_t(lang, "pause"), icon="pause", action=hk("esc"), style=RED),
+    ]
+    p.zones = [Slot(widget=w("clock"), style=SLATE), Slot(widget=w("volume"), style=st("#14213d", "#0a1020")),
+               Slot(label=_t(lang, "overlay_wheel"), icon="gauge", action=hk(PG_WIDGETS), style=st("#1e1033", "#0e0819", "#8b5cf6")),
+               _zone_name()]
+    p.knobs = [VOLUME, Knob(left={"type": "media", "op": "prevtrack"}, right={"type": "media", "op": "nexttrack"},
+                            press={"type": "media", "op": "playpause"}),
+               Knob(left=hk("ctrl"), right=hk("shift"), press=hk("space")),      # gear down / up, e-brake
+               _nav("nfsc")]
+    return p
+
+
+def nfsps(lang: str) -> Page:
+    p = Page(id="nfsps", name=_t(lang, "nfsps"), icon="flag", accent="#38bdf8", style={"change": "zoom"})
+    p.keys = [
+        Slot(label=_t(lang, "nitro"), icon="flame", action=NITRO, style=BLUE_),
+        Slot(label=_t(lang, "ebrake"), icon="circle-parking", action=hk("rctrl"), style=RED),
+        Slot(label=_t(lang, "clutch"), icon="disc", action=hk("space"), style=WARM),
+        Slot(label=_t(lang, "look_back"), icon="rotate-ccw", action=hk("l"), style=SLATE),
+        Slot(label=_t(lang, "camera"), icon="camera", action=hk("c"), style=SLATE),
+        Slot(label=_t(lang, "pull_cam"), icon="zoom-out", action=hk("p"), style=SLATE),
+        Slot(label=_t(lang, "screenshot"), icon="aperture", action=hk(PG_CAPTURE), style=st("#1e1033", "#0e0819", "#8b5cf6")),
+        Slot(label=_t(lang, "overlay_wheel"), icon="gauge", action=hk(PG_WIDGETS), style=st("#1e1033", "#0e0819", "#8b5cf6")),
+        Slot(label=_t(lang, "engage"), icon="check", action=hk("enter"), style=GREEN),
+        Slot(label=_t(lang, "pause"), icon="pause", action=hk("esc"), style=RED),
+    ]
+    p.zones = [Slot(widget=w("clock"), style=SLATE), Slot(widget=w("volume"), style=st("#14213d", "#0a1020")),
+               Slot(label=_t(lang, "nitro"), icon="flame", action=NITRO, style=BLUE_), _zone_name()]
+    p.knobs = [VOLUME, Knob(left={"type": "media", "op": "prevtrack"}, right={"type": "media", "op": "nexttrack"},
+                            press={"type": "media", "op": "playpause"}),
+               Knob(left=hk("ctrl"), right=hk("shift"), press=hk("rctrl")),      # gear down / up, e-brake
+               _nav("nfsps")]
+    return p
+
+
+NEW_PAGES.update({"nfsc": nfsc, "nfsps": nfsps})
+NEW_RULES += [{"process": "NFSC.exe", "page": "nfsc"}, {"process": "nfs.exe", "page": "nfsps"}]
