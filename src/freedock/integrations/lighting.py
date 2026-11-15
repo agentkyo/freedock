@@ -1071,6 +1071,14 @@ class Lights:
         if chroma:
             chroma.release()
 
+    def vehicle_signals(self, signals: dict, ttl_ms: int = 600) -> None:
+        """Blinkers / brake / reverse of a game Ambibox LED cannot read itself ({"cmd": "signals"}, 0.4.0+).
+        The lamps go already blinking; Ambibox draws them over the running ambilight. No tray: nothing."""
+        strip = self._strip
+        if strip is None or not self.strip_enabled or strip.mode != "tray" or not strip.tray_truck_lights:
+            return
+        strip.tx.send({"cmd": "signals", **{k: bool(v) for k, v in signals.items()}, "ttl_ms": int(ttl_ms)})
+
     def strip_truck_lights(self) -> bool:
         """True while Ambibox LED itself paints the truck's blinkers and beams over its ambilight
         (0.4.0+, game effects on). FreeDock then leaves those to it instead of drawing them twice."""

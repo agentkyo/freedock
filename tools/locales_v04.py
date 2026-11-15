@@ -79,6 +79,12 @@ EXTRA4 = {
     # ---- Euro Truck / ATS: route advisor and compass gone, job pay and cargo damage in
     "ets2.cargo": ("Cargo damage", "Dano da carga", "Daño de la carga"),
     "ets2.income": ("Job pay", "Frete", "Pago"),
+    # ---- Motor Town and the games of 0.5 (AC EVO, SLRR, New Star GP, NFS Heat, City Car Driving)
+    "widget.motortown": ("Motor Town telemetry", "Telemetria do Motor Town", "Telemetría de Motor Town"),
+    "mt.cruise": ("Cruise control", "Piloto automático", "Control de crucero"),
+    "mt.road_limit": ("Speed limit", "Limite da via", "Límite de la vía"),
+    "mt.money": ("Money", "Dinheiro", "Dinero"),
+    "mt.lights": ("Headlights", "Faróis", "Faros"),
     # ---- a deck that is plugged in but refuses data, and the software replug
     "ui.device_stuck": ("N4 not responding", "N4 não responde", "N4 no responde"),
     "ui.device_stuck_hint": ("The deck is connected but refuses data. Use 'Restart the dock USB' in this menu, or replug it.",

@@ -110,7 +110,9 @@ class Transition:
 # Games whose controllers never touch the deck: while one runs the idle screensaver stays away.
 GAME_PROCESSES = ("acs.exe", "acc.exe", "ac2-win64-shipping.exe", "flightsimulator.exe", "flightsimulator2024.exe",
                   "eurotrucks2.exe", "amtrucks.exe", "beamng.drive.x64.exe", "x-plane.exe", "dirtrally2.exe",
-                  "f1_24.exe", "iracingsim64dx11.exe", "rfactor2.exe", "lmu.exe", "ams2avx.exe")
+                  "f1_24.exe", "iracingsim64dx11.exe", "rfactor2.exe", "lmu.exe", "ams2avx.exe",
+                  "assettocorsaevo.exe", "motortown-win64-shipping.exe", "streetlegal_redline.exe", "nsgp.exe",
+                  "needforspeedheat.exe", "citycardriving2-win64-shipping.exe")
 IDLE_DIM = 0.5          # idle screen brightness, relative to the user's setting
 IDLE_DIM_MIN = 15
 
@@ -741,6 +743,10 @@ class Engine(QObject):
         from .integrations.beamng import telemetry
         return telemetry.data
 
+    def motortown(self) -> dict:
+        from .integrations.motortown import telemetry
+        return telemetry.data
+
     def smooth(self, ref: SlotRef, name: str, target: float, speed: float = 0.25) -> float:
         k = (ref.key, name)
         cur = self._smooth.get(k, target)
@@ -769,7 +775,7 @@ class Engine(QObject):
             if "ac_shift_lights" in page.effects:
                 needs.add("assetto")
             if "rgb_shift_lights" in page.effects:
-                needs.update(("lights", "assetto", "ets2", "beamng"))
+                needs.update(("lights", "assetto", "ets2", "beamng", "motortown"))
         gcfg = self.settings.game_lights or {}
         if (self.settings.notify or {}).get("lights", True) or gcfg.get("enabled", True) or                 gcfg.get("idle", "screen") == "screen":
             needs.add("lights")
@@ -783,7 +789,7 @@ class Engine(QObject):
             from .integrations.msfs import sim
             sim.override = self.settings.simconnect_dll
             sim.start()
-        for game in ("ets2", "beamng"):
+        for game in ("ets2", "beamng", "motortown"):
             if game in needs and game not in self._started:
                 import importlib
                 importlib.import_module(f".integrations.{game}", __package__).telemetry.start()
@@ -812,7 +818,7 @@ class Engine(QObject):
     # ================================================================== auto switch
     def _game_telemetry_live(self) -> bool:
         """True while a sim integration that is already running reports a connected game."""
-        for name in ("assetto", "ets2", "beamng"):
+        for name in ("assetto", "ets2", "beamng", "motortown"):
             mod = sys.modules.get(f"{__package__}.integrations.{name}")
             if name in self._started and mod and mod.telemetry.data.get("connected"):
                 return True
@@ -1122,7 +1128,7 @@ class Engine(QObject):
         if name == "cs2":
             self._start_cs2()
             return
-        if name in ("ets2", "beamng", "assetto"):
+        if name in ("ets2", "beamng", "assetto", "motortown"):
             import importlib
             importlib.import_module(f".integrations.{name}", __package__).telemetry.start()
             self._started.add(name)
@@ -1143,7 +1149,8 @@ class Engine(QObject):
         """Rev bar fill 0..1 while a racing page with the "rgb_shift_lights" effect is open."""
         if "rgb_shift_lights" not in self.page.effects:
             return None
-        for name, get in (("assetto", self.assetto), ("ets2", self.ets2), ("beamng", self.beamng)):
+        for name, get in (("assetto", self.assetto), ("ets2", self.ets2), ("beamng", self.beamng),
+                          ("motortown", self.motortown)):
             if name not in self._started:
                 continue
             try:
@@ -1168,8 +1175,22 @@ class Engine(QObject):
         if "cs2" in self._started:
             from .integrations.cs2 import telemetry as cs2
         n = int((self.settings.lighting or {}).get("strip_count", 71))
+        if theme is not None and theme.id == "motortown" and "motortown" in self._started:
+            self._motortown_strip(now)
         self._rgb_active = gl.tick(now, shift=self._shift_frac(), n_leds=n, cs2=cs2, truck=truck,
                                    paused=now < getattr(self, "_rgb_pause_until", 0))
+
+    def _motortown_strip(self, now: float) -> None:
+        """Motor Town blinkers, brake and reverse on the strip: Ambibox LED (0.4+) paints them over its
+        ambilight, the way it does for ETS2 by itself. Sent ~8 times a second; they fade out on their own."""
+        if now < getattr(self, "_mt_next", 0.0):
+            return
+        self._mt_next = now + 0.12
+        from .integrations import motortown
+        from .integrations.lighting import lights
+        d = motortown.telemetry.data
+        if d.get("connected"):
+            lights.vehicle_signals(motortown.strip_signals(d, now), ttl_ms=600)
 
     def ack_notify(self, src: str | None = None) -> None:
         self.notify_center.ack(src)

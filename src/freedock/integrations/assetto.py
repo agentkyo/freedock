@@ -20,6 +20,10 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 PHYSICS_SIZE, GRAPHICS_SIZE, STATIC_SIZE = 800, 1600, 820
+# Assetto Corsa EVO writes Local\acevo_pmf_*. Its physics page starts exactly like AC's (packet id, gas,
+# brake, fuel, gear, rpm ... tc 204, pit limiter 248, abs 252); the graphics page differs after the status
+# (offset 4): natural C alignment puts rpm_percent at 72. Its static page is laid out differently: not read.
+EVO_PHYSICS_SIZE, EVO_GRAPHICS_SIZE = 256, 96
 
 # AC hard-codes Ctrl for these bindings; controls.ini only stores the letter.
 CTRL_IMPLIED = {"ABS", "TRACTION_CONTROL", "AUTO_SHIFTER", "ACTIVATE_AI", "IDEAL_LINE", "MOUSE_STEERING",
@@ -186,18 +190,25 @@ class AssettoTelemetry:
 
     def _run(self) -> None:
         maps = None
+        decode = self._decode
         while not self._stop.is_set():
             if maps is None:
                 try:
                     maps = (_Mapping("Local\\acpmf_physics", PHYSICS_SIZE),
                             _Mapping("Local\\acpmf_graphics", GRAPHICS_SIZE),
                             _Mapping("Local\\acpmf_static", STATIC_SIZE))
+                    decode = self._decode
                 except OSError:
-                    self.data = {"connected": False}
-                    self._stop.wait(2.0)
-                    continue
+                    try:
+                        maps = (_Mapping("Local\\acevo_pmf_physics", EVO_PHYSICS_SIZE),
+                                _Mapping("Local\\acevo_pmf_graphics", EVO_GRAPHICS_SIZE))
+                        decode = self._decode_evo
+                    except OSError:
+                        self.data = {"connected": False}
+                        self._stop.wait(2.0)
+                        continue
             try:
-                self.data = self._decode(*(m.read() for m in maps))
+                self.data = decode(*(m.read() for m in maps))
             except (OSError, struct.error) as exc:
                 log.info("AC read failed: %s", exc)
                 for m in maps:
@@ -226,6 +237,29 @@ class AssettoTelemetry:
             "laps": _i(gf, 132), "position": _i(gf, 136), "current_ms": _i(gf, 140),
             "last_ms": _i(gf, 144), "best_ms": _i(gf, 148), "in_pit": _i(gf, 160) != 0,
             "sector": _i(gf, 164), "total_laps": _i(gf, 172), "time": time.time(),
+        }
+
+    _evo_top = 0
+
+    def _decode_evo(self, ph: bytes, gf: bytes) -> dict:
+        """Assetto Corsa EVO: the fields both games share. Laps, position and car name stay empty."""
+        status = self.STATUS.get(_i(gf, 4), "off")
+        rpm = _i(ph, 20)
+        pct = _f(gf, 72)
+        if 0.2 < pct <= 1.05 and rpm > 500:
+            self._evo_top = round(rpm / pct)               # rpm_percent of the car's limit
+        else:
+            self._evo_top = max(self._evo_top, rpm)         # fallback: the highest rpm seen
+        gear_raw = _i(ph, 16)
+        gear = "R" if gear_raw == 0 else "N" if gear_raw == 1 else str(gear_raw - 1)
+        return {
+            "connected": status != "off" and 0 <= rpm < 30000, "game": "acevo", "status": status,
+            "car": "", "track": "", "gas": _f(ph, 4), "brake": _f(ph, 8), "fuel": _f(ph, 12), "max_fuel": 0.0,
+            "gear": gear, "rpm": rpm, "max_rpm": self._evo_top or 8000, "speed": _f(ph, 28),
+            "tc": _f(ph, 204), "abs": _f(ph, 252), "pit_limiter": _i(ph, 248) != 0, "brake_bias": 0.0,
+            "air_temp": 0.0, "road_temp": 0.0, "tyre_core": [_f(ph, 152 + 4 * i) for i in range(4)],
+            "laps": 0, "position": 0, "current_ms": 0, "last_ms": 0, "best_ms": 0, "in_pit": False,
+            "sector": 0, "total_laps": 0, "time": time.time(),
         }
 
 

@@ -680,3 +680,6 @@ NEW_PAGES.update({"ai": ai_page, "ets2": ets2, "ets2_trip": ets2_trip, "beamng":
                   "cs2": cs2_page, "ets2_bus": ets2_bus})
 NEW_RULES = [{"process": "eurotrucks2.exe", "page": "ets2"}, {"process": "amtrucks.exe", "page": "ets2"},
              {"process": "BeamNG.drive.x64.exe", "page": "beamng"}, {"process": "cs2.exe", "page": "cs2"}]
+
+
+from . import presets_games  # noqa: E402,F401 - registers the 0.5 game pages in NEW_PAGES / NEW_RULES

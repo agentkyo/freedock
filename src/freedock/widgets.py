@@ -609,6 +609,62 @@ def _beamng(e, s, c, v):
     return v
 
 
+# --------------------------------------------------------------------------- Motor Town
+MT_METRICS = (("speed", "bng.speed"), ("gear", "bng.gear"), ("rpm", "bng.rpm"), ("fuel", "bng.fuel"),
+              ("cruise", "mt.cruise"), ("road_limit", "mt.road_limit"), ("money", "mt.money"),
+              ("lights", "mt.lights"), ("handbrake", "bng.handbrake"), ("signal_left", "bng.signal_left"),
+              ("signal_right", "bng.signal_right"), ("hazard", "bng.hazard"), ("abs", "bng.abs"))
+MT_STATES = {"lights": "#facc15", "handbrake": "#ef4444", "signal_left": "#22c55e", "signal_right": "#22c55e",
+             "hazard": "#f97316", "abs": "#f59e0b"}
+
+
+@widget("motortown", "games", "truck", Field("metric", "choice", "speed", MT_METRICS), needs=("motortown",))
+def _motortown(e, s, c, v):
+    d = e.motortown()
+    m = c.get("metric", "speed")
+    if not d.get("connected"):
+        label = dict(MT_METRICS).get(m, "bng.speed")
+        return v.with_(dim=0.5, value=None, icon=v.icon or "truck", label=v.label or tr(label))
+    if m in MT_STATES:
+        on = bool(d.get(m))
+        return v.with_(active=on, accent=MT_STATES[m] if on else v.accent,
+                       anim="blink" if on and m in ("hazard", "signal_left", "signal_right") else None)
+    speed = d.get("speed_kmh") or 0
+    top = d.get("max_rpm") or 2500
+    frac = min(1.0, (d.get("rpm") or 0) / max(1.0, top))
+    if m == "speed":
+        limit = d.get("road_limit_kmh") or 0
+        over = limit > 0 and speed > limit + 3
+        return v.with_(value=f"{speed:.0f}", sub=f"km/h · {limit:.0f}" if limit > 0 else "km/h", mono=True, label="",
+                       accent="#ef4444" if over else v.accent, anim="alert" if over else None)
+    if m == "gear":
+        return v.with_(value=str(d.get("gear", "N")), sub=f"{speed:.0f} km/h", mono=True, label="",
+                       progress=e.smooth(s, "rpm", frac, 0.5), progress_style="bar", accent=_load_color(frac))
+    if m == "rpm":
+        return v.with_(value=f"{d.get('rpm') or 0:.0f}", sub="RPM", mono=True, label="",
+                       progress=e.smooth(s, "rpm", frac, 0.5), accent=_load_color(frac))
+    if m == "fuel":
+        f = d.get("fuel") or 0
+        litres = d.get("fuel_l")
+        return v.with_(value=f"{f * 100:.0f}%", sub=f"{litres:.0f} L" if litres else tr("bng.fuel"), mono=True,
+                       label="", progress=f, progress_style="bar", accent=_load_color(1 - f),
+                       anim="pulse" if f < 0.1 else None)
+    if m == "cruise":
+        on = bool(d.get("cruise"))
+        target = d.get("cruise_kmh") or 0
+        return v.with_(value=f"{target:.0f}" if on and target else ("ON" if on else "--"), sub=tr("mt.cruise"),
+                       mono=True, label="", active=on, accent="#22c55e" if on else v.accent)
+    if m == "road_limit":
+        limit = d.get("road_limit_kmh") or 0
+        return v.with_(value=f"{limit:.0f}" if limit else "--", sub=tr("mt.road_limit"), mono=True, label="",
+                       accent="#ef4444" if limit and speed > limit + 3 else v.accent)
+    if m == "money":
+        money = d.get("money")
+        return v.with_(value=f"{money:,}".replace(",", ".") if money is not None else "--", sub=tr("mt.money"),
+                       mono=True, label="")
+    return v
+
+
 # --------------------------------------------------------------------------- Counter-Strike 2
 CS2_METRICS = tuple((m, f"cs2.{m}") for m in (
     "bomb", "health", "armor", "money", "kills", "score", "weapon", "round", "map", "kda"))
