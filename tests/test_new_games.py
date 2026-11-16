@@ -103,3 +103,31 @@ def test_light_themes_for_the_new_games():
                      ("citycardriving2-win64-shipping.exe", "ccd2"), ("nfsc.exe", "nfsc"), ("nfs.exe", "nfsps"), ("nfsps.exe", "nfsps")):
         assert theme_for({exe}).id == tid
         assert THEMES[tid].page == tid
+
+
+def test_udp_port_is_shared_with_a_second_listener():
+    """Whoever binds the game's port repeats the packets; the late listener reads the copy."""
+    import socket
+
+    from freedock.integrations.udp_share import SharedPort
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    share = port + 1 if port < 65535 else port - 1
+    first, late = SharedPort(port, share, timeout=0.3), SharedPort(port, share, timeout=0.3)
+    game = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        assert first.recv() is None and first.owner
+        assert late.recv() is None and not late.owner
+        game.sendto(b"hello", ("127.0.0.1", port))
+        assert first.recv() == b"hello"
+        assert late.recv() == b"hello"
+        first.close()
+        late._next = 0.0                      # do not wait the 5 s between attempts
+        assert late.recv() is None and late.owner, "the late one takes over a freed port"
+    finally:
+        first.close()
+        late.close()
+        game.close()

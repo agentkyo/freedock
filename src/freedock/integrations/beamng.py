@@ -17,13 +17,13 @@ import logging
 import os
 import re
 import shutil
-import socket
 import struct
 import threading
 import time
 from pathlib import Path
 
 from .assetto import Binding
+from .udp_share import SHARE_PORTS, SharedPort
 
 log = logging.getLogger(__name__)
 
@@ -124,34 +124,20 @@ class BeamNGTelemetry:
 
     def _run(self) -> None:
         port = self.port or outgauge_status().get("port") or DEFAULT_PORT
-        sock = None
+        # the port is shared with other apps (PitGlass): see udp_share
+        feed = SharedPort(port, SHARE_PORTS.get(port), self.host)
         last = 0.0
         while not self._stop.is_set():
-            if sock is None:
+            pkt = feed.recv(512)
+            if pkt:
                 try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    sock.bind((self.host, port))
-                    sock.settimeout(0.5)
-                except OSError as exc:
-                    log.info("cannot listen for OutGauge on %s:%s: %s", self.host, port, exc)
-                    if sock:
-                        sock.close()
-                    sock = None
-                    self.data = {"connected": False}
-                    self._stop.wait(5.0)
-                    continue
-            try:
-                pkt = sock.recv(512)
-                self.data = decode_packet(pkt)
-                last = time.monotonic()
-            except socket.timeout:
-                pass
-            except (OSError, ValueError, struct.error) as exc:
-                log.debug("OutGauge packet ignored: %s", exc)
+                    self.data = decode_packet(pkt)
+                    last = time.monotonic()
+                except (ValueError, struct.error) as exc:
+                    log.debug("OutGauge packet ignored: %s", exc)
             if self.data.get("connected") and time.monotonic() - last > self.TIMEOUT_S:
                 self.data = {"connected": False}
-        if sock:
-            sock.close()
+        feed.close()
 
 
 telemetry = BeamNGTelemetry()

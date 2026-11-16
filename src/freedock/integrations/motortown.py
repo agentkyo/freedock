@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import logging
 import os
-import socket
 import struct
 import threading
 import time
+
+from .udp_share import SHARE_PORTS, SharedPort
 
 log = logging.getLogger(__name__)
 
@@ -131,36 +132,17 @@ class MotorTownTelemetry:
             self._stop.wait(1 / 30)
 
     def _run(self) -> None:
-        sock = None
+        # the port is shared with other apps (PitGlass): see udp_share
+        feed = SharedPort(self.port, SHARE_PORTS.get(self.port), self.host)
         last = 0.0
         while not self._stop.is_set():
-            if sock is None:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    sock.bind((self.host, self.port))
-                    sock.settimeout(0.5)
-                except OSError as exc:
-                    log.info("cannot listen for Motor Town on %s:%s: %s", self.host, self.port, exc)
-                    if sock:
-                        sock.close()
-                    sock = None
-                    self._stop.wait(5.0)
-                    continue
-            try:
-                pkt, _ = sock.recvfrom(4096)
-            except socket.timeout:
-                pkt = b""
-            except OSError:
-                sock.close()
-                sock = None
-                continue
+            pkt = feed.recv(4096)
             d = decode_packet(pkt) if pkt else None
             if d is not None:
                 self.data, last = d, time.monotonic()
             elif self.data.get("connected") and time.monotonic() - last > self.TIMEOUT_S:
                 self.data = {"connected": False}
-        if sock:
-            sock.close()
+        feed.close()
 
 
 telemetry = MotorTownTelemetry()
