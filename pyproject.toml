@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "freedock"
-version = "0.3.0"
+version = "0.3.1"
 description = "Open-source driver and editor for the MiraBox N4 StreamDock - Windows & Linux, no vendor software."
 readme = "README.md"
 license = "MIT"
